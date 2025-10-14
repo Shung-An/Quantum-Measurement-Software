@@ -26,6 +26,8 @@
 #include <Windows.h>
 #include <stdlib.h>
 #include <iostream>
+#include <vector>
+
 
 /*
  * Function: createAndConnectPipe
@@ -53,7 +55,9 @@ extern "C" HANDLE createAndConnectPipe(const char* pipeName, DWORD bufferSize) {
         NULL);                     // Default security attributes
 
     if (hPipe == INVALID_HANDLE_VALUE) {
-        std::cerr << "Failed to create named pipe.\n";
+        DWORD err = GetLastError();
+        std::wcerr << L"[Error] Failed to create named pipe (" << pipeName << L")\n"
+            << L"Win32 Error Code: " << err << L"\n";
         return NULL;
     }
 
@@ -108,7 +112,7 @@ extern "C" bool CheckForRequest(HANDLE hPipe) {
  *   - This function calls CheckForRequest to verify if the client has sent data.
  *   - The function uses `ReadFile` and `WriteFile` to read from and write to the pipe.
  */
-extern "C" int handleClientRequests(HANDLE hPipe, short* data, double* corrMatrix, int segmentIndex, DWORD bytesToSend) {
+extern "C" int handleClientRequests(HANDLE hPipe, short* data, short* dataB, double* corrMatrix, int segmentIndex, DWORD bytesToSend) {
     if (!CheckForRequest(hPipe)) {
         return 0;  // No data to process
     }
@@ -129,15 +133,27 @@ extern "C" int handleClientRequests(HANDLE hPipe, short* data, double* corrMatri
         DWORD bytesWritten1;
         DWORD bytesWritten2;
 
-        // Calculate the starting position for the segment to send in the data array
-        short* segmentStart = data + (segmentIndex * (bytesToSend / sizeof(short))); // Calculate the starting point
+        // --- Calculate the starting position for this segment ---
+        int samplesPerSegment = bytesToSend / sizeof(short);
+        short* segmentStartA = data + segmentIndex * samplesPerSegment;
+        short* segmentStartB = dataB + segmentIndex * samplesPerSegment;
 
-        // Send a segment of `data` to the client
-        success = WriteFile(hPipe, segmentStart, bytesToSend, &bytesWritten1, NULL);
-        if (!success || bytesWritten1 != bytesToSend) {
-            std::cerr << "Failed to send data segment to client.\n";
-            return 1;  // Error sending the data segment
+        // --- Interleave A and B (ABABAB...) ---
+        std::vector<short> interleaved;
+        interleaved.resize(samplesPerSegment * 2);
+
+        for (int i = 0; i < samplesPerSegment; ++i) {
+            interleaved[2 * i] = segmentStartA[i];
+            interleaved[2 * i + 1] = segmentStartB[i];
         }
+
+        // --- Send the interleaved segment ---
+        DWORD interleavedBytes = static_cast<DWORD>(interleaved.size() * sizeof(short));
+        success = WriteFile(hPipe, interleaved.data(), interleavedBytes, &bytesWritten1, NULL);
+        if (!success || bytesWritten1 != interleavedBytes) {
+            std::cerr << "Failed to send interleaved data segment to client.\n";
+            return 1;
+		}  // Error sending the data segment
 
         // Send the correlation matrix to the client
         success = WriteFile(hPipe, corrMatrix, 512, &bytesWritten2, NULL);

@@ -60,6 +60,7 @@
 HANDLE raw_signal_hPipe = NULL;					// Handle to the pipe for all communication between software process and gagestreamthruGPU process
 char experimentLogDirectory[256] = "Z:\\Quantum Squeezing Project\\DataFiles\\"; // 256 is an example size, adjust if needed
 
+
 // User configuration variables
 typedef struct
 {
@@ -104,7 +105,7 @@ typedef struct
 {
 	int32 demodulation_window_size;	/* Demodulation window size*/
 	int32 gpu_block_size;			/* GPU block size */
-	BOOL use_cpu_verify;					/* Verify the GPU Calculation result with CPU Calculation or not */	
+	BOOL use_cpu_verify;					/* Verify the GPU Calculation result with CPU Calculation or not */
 	BOOL profile;							/* Profile the experiment or not*/
 	int32 correlation_type;				/* Correlation type - corss correlation or g2 correlation */
 	BOOL useIPC;							/* Use IPC or not */
@@ -126,55 +127,56 @@ BOOL Prepare_Cleanup();
 extern "C" {
 #endif
 
-extern cudaError_t ComputeCrossCorrelationGPU(
-	const __int64 u32LoopCount,			// Loop count
-	short* data,																		// Input data
-	const __int64 size,																	// Size of the input data
-	const int totalThreads,																// Total number of threads
-	const int gridSize,																	// Thread Grid size
-	const int blockSize,																// Thread Block size
-	const int sharedSegmentSize,														// Shared Memory segment size
-	const int demodulationWindowSize,													// Demodulation window size
-	const int totalSegNum,																// Total number of segments of input data
-	const int corrMatrixSize,															// Cross Correlation Matrix size
-	const int segmentSize,																// Data Segment size
-	double* h_odata,																	// Output data
-	cublasHandle_t handle,																// cuBLAS handle
-	double* d_aggregatedCorrMatrix,														// Aggregated correlation matrix
-	double* d_reducedCorrMatrix,														// Reduced correlation matrix, here means mean correlation matrix
-	double* d_scaling_factors,															// Scaling factors
-	FILE * binFile,																		// Binary file for storing reduced correlation matrix	
-	FILE * AnalysisFile);																// Analysis file showing the reduced correlation matrix
+	extern cudaError_t ComputeCrossCorrelationGPU(
+		const __int64 u32LoopCount,			// Loop count
+		short* data,																		// Input data
+		short* dataB,																		// Input data B for cross correlation
+		const __int64 size,																	// Size of the input data
+		const int totalThreads,																// Total number of threads
+		const int gridSize,																	// Thread Grid size
+		const int blockSize,																// Thread Block size
+		const int sharedSegmentSize,														// Shared Memory segment size
+		const int demodulationWindowSize,													// Demodulation window size
+		const int totalSegNum,																// Total number of segments of input data
+		const int corrMatrixSize,															// Cross Correlation Matrix size
+		const int segmentSize,																// Data Segment size
+		double* h_odata,																	// Output data
+		cublasHandle_t handle,																// cuBLAS handle
+		double* d_aggregatedCorrMatrix,														// Aggregated correlation matrix
+		double* d_reducedCorrMatrix,														// Reduced correlation matrix, here means mean correlation matrix
+		double* d_scaling_factors,															// Scaling factors
+		FILE* binFile,																		// Binary file for storing reduced correlation matrix	
+		FILE* AnalysisFile);																// Analysis file showing the reduced correlation matrix
 
-extern cudaError_t ComputeG2CorrelationGPU(
-	const __int64 u32LoopCount,           // Loop count
-	short* data,                                                                     // Input data
-	const __int64 size,                                                              // Size of the input data
-	const int totalThreads,                                                          // Total number of threads
-	const int gridSize,                                                              // Thread Grid size
-	const int blockSize,                                                             // Thread Block size
-	const int sharedSegmentSize,                                                     // Shared Memory segment size
-	const int demodulationWindowSize,													// Demodulation window size
-	const int totalSegNum,                                                           // Total number of segments of input data
-	const int corrMatrixSize,                                                        // Auto Correlation Matrix size
-	const int segmentSize,                                                           // Data Segment size
-	double* h_odata,                                                                 // Output data
-	cublasHandle_t handle,                                                           // cuBLAS handle
-	double* d_correlationMatrixA,                                                    // Correlation matrix A
-	double* d_correlationMatrixB,                                                    // Correlation matrix B
-	double* d_g2Matrix,                                                              // G2 matrix (final output)
-	double* d_reducedCorrMatrixA,                                                     // Reduced Auto correlation matrix A
-	double* d_reducedCorrMatrixB,                                                     // Reduced Auto correlation matrix B
-	double* d_scaling_factors,                                                       // Scaling factors
-	FILE * binFile,                                                                  // Binary file for storing the G2 matrix
-	FILE * AnalysisFile);                                                             // Analysis file for showing the G2 matrix
+	extern cudaError_t ComputeG2CorrelationGPU(
+		const __int64 u32LoopCount,           // Loop count
+		short* data,                                                                     // Input data
+		const __int64 size,                                                              // Size of the input data
+		const int totalThreads,                                                          // Total number of threads
+		const int gridSize,                                                              // Thread Grid size
+		const int blockSize,                                                             // Thread Block size
+		const int sharedSegmentSize,                                                     // Shared Memory segment size
+		const int demodulationWindowSize,													// Demodulation window size
+		const int totalSegNum,                                                           // Total number of segments of input data
+		const int corrMatrixSize,                                                        // Auto Correlation Matrix size
+		const int segmentSize,                                                           // Data Segment size
+		double* h_odata,                                                                 // Output data
+		cublasHandle_t handle,                                                           // cuBLAS handle
+		double* d_correlationMatrixA,                                                    // Correlation matrix A
+		double* d_correlationMatrixB,                                                    // Correlation matrix B
+		double* d_g2Matrix,                                                              // G2 matrix (final output)
+		double* d_reducedCorrMatrixA,                                                     // Reduced Auto correlation matrix A
+		double* d_reducedCorrMatrixB,                                                     // Reduced Auto correlation matrix B
+		double* d_scaling_factors,                                                       // Scaling factors
+		FILE* binFile,                                                                  // Binary file for storing the G2 matrix
+		FILE* AnalysisFile);                                                             // Analysis file for showing the G2 matrix
 
 
-extern void initializeArrayWithCuda(double* dev_array, int size, double value);
-extern int CPU_Equation_PlusOne(void* buffer, __int64 length, double* gpu_average_matrix);
-extern HANDLE createAndConnectPipe(const char* pipeName, DWORD bufferSize);
-extern int handleClientRequests(HANDLE hPipe, short* data, double* corrMatrix, int segmentIndex, DWORD bytesToSend);
-extern bool CheckForRequest(HANDLE hPipe);
+	extern void initializeArrayWithCuda(double* dev_array, int size, double value);
+	extern int CPU_Equation_PlusOne(void* buffer, __int64 length, double* gpu_average_matrix);
+	extern HANDLE createAndConnectPipe(const char* pipeName, DWORD bufferSize);
+	extern int handleClientRequests(HANDLE hPipe, short* data, short* dataB, double* corrMatrix, int segmentIndex, DWORD bytesToSend, int choice);
+	extern bool CheckForRequest(HANDLE hPipe);
 
 #ifdef __cplusplus
 }
@@ -203,14 +205,14 @@ void VerifyData(void* buffer, int64 size, unsigned int sample_size);
 
 
 // Global variables shared between threads
-HANDLE						g_hThread[MAX_CARDS_COUNT] = { 0 };
+HANDLE						g_hThread[2] = { 0 ,0 };
 LONGLONG					g_llCardTotalData[MAX_CARDS_COUNT] = { 0 };
 LONGLONG					g_llTotalSamplesConfig = 0;
-HANDLE						g_hStreamStarted = NULL;
-HANDLE						g_hStreamAbort = NULL;
-HANDLE						g_hStreamError = NULL;
-HANDLE						g_hThreadReadyForStream = NULL;
-CSHANDLE					g_hSystem = 0;
+HANDLE						g_hStreamStarted[2] = { 0,0 };
+HANDLE						g_hStreamAbort[2] = { 0,0 };
+HANDLE						g_hStreamError[2] = { 0,0 };
+HANDLE						g_hThreadReadyForStream[2] = { 0,0 };
+CSHANDLE					g_hSystem[2] = { 0,0 };
 CSSYSTEMINFO				g_CsSysInfo = { 0 };
 CSACQUISITIONCONFIG			g_CsAcqCfg = { 0 };
 CSSTMCONFIG					g_StreamConfig = { 0 }; // Stream configuration
@@ -244,17 +246,18 @@ int _tmain()
 	cudaError_t					cudaStatus = cudaSuccess;
 	int64						i64TickFrequency = 0;
 	int							display_result = 1;
-	
 
-	clock_t						pre_start_time, pre_current_time;
-	double						pre_time;
 
+	clock_t pre_start_time, pre_current_time;
+	double pre_time;
 	BOOL						useIPC = FALSE;
 
 
 	raw_signal_hPipe = createAndConnectPipe(RAW_SIG_PIPE_NAME, 0);  // Establish a communication pipe
 	if (raw_signal_hPipe == NULL) {
 		fprintf(stderr, "Failed to create communication pipe.\n");
+		DisconnectNamedPipe(raw_signal_hPipe);
+		CloseHandle(raw_signal_hPipe);
 		return -1;
 	}
 	
@@ -265,7 +268,7 @@ int _tmain()
 	while (1) {
 
 		// Check if there is any request from the client
-		command = handleClientRequests(raw_signal_hPipe, NULL, NULL, 0, 0, 0);
+		command = handleClientRequests(raw_signal_hPipe, NULL, NULL, NULL, 0, 0, 0);
 
 		if (command == 2) {
 
@@ -290,7 +293,6 @@ int _tmain()
 		}
 
 	}
-	
 	pre_start_time = clock();
 
 	// Initializes the CompuScope boards found in the system. If the
@@ -308,7 +310,14 @@ int _tmain()
 	// 2 systems or more are found, the first system that is found
 	// will be the system that will be used. g_hSystem will hold a unique
 	// system identifier that is used when referencing the system.
-	i32Status = CsGetSystem(&g_hSystem, 0, 0, 0, 0);
+	i32Status = CsGetSystem(&g_hSystem[0], 0, 0, 0, 0);
+	if (CS_FAILED(i32Status))
+	{
+		DisplayErrorString(i32Status);
+		return (-1);
+	}
+
+	i32Status = CsGetSystem(&g_hSystem[1], 0, 0, 0, 0);
 	if (CS_FAILED(i32Status))
 	{
 		DisplayErrorString(i32Status);
@@ -318,24 +327,60 @@ int _tmain()
 	// Get System information. The u32Size field must be filled in
 	// prior to calling CsGetSystemInfo
 	CsSysInfo.u32Size = sizeof(CSSYSTEMINFO);
-	i32Status = CsGetSystemInfo(g_hSystem, &CsSysInfo);
+	i32Status = CsGetSystemInfo(g_hSystem[0], &CsSysInfo);
 	if (CS_FAILED(i32Status))
 	{
 		DisplayErrorString(i32Status);
-		CsFreeSystem(g_hSystem);
+		CsFreeSystem(g_hSystem[0]);
 		return (-1);
 	}
 	// A copy used in the threads to build headers
 	g_CsSysInfo = CsSysInfo;
 
 	// Display the system name from the driver
-	_ftprintf(stdout, _T("\nBoard Name: %s"), CsSysInfo.strBoardName);
+	_ftprintf(stdout, _T("\nBoard1 Name (Handle): %s (%d)"), CsSysInfo.strBoardName, g_hSystem[0]);
 
 
+	// Get System information. The u32Size field must be filled in
+// prior to calling CsGetSystemInfo
+	CsSysInfo.u32Size = sizeof(CSSYSTEMINFO);
+	i32Status = CsGetSystemInfo(g_hSystem[1], &CsSysInfo);
+	if (CS_FAILED(i32Status))
+	{
+		DisplayErrorString(i32Status);
+		CsFreeSystem(g_hSystem[1]);
+		return (-1);
+	}
+	// A copy used in the threads to build headers
+	g_CsSysInfo = CsSysInfo;
+
+	// Display the system name from the driver
+	_ftprintf(stdout, _T("\nBoard2 Name (Handle): %s (%d)"), CsSysInfo.strBoardName, g_hSystem[1]);
 
 
 	//	We are analysing the ini file to find the number of triggers
-	i32Status = CsAs_ConfigureSystem(g_hSystem, (int)CsSysInfo.u32ChannelCount,
+	i32Status = CsAs_ConfigureSystem(g_hSystem[0], (int)CsSysInfo.u32ChannelCount,
+		(int)CalculateTriggerCountFromConfig(&CsSysInfo, (LPCTSTR)szIniFile),
+		(LPCTSTR)szIniFile, &u32Mode);
+	if (CS_FAILED(i32Status))
+	{
+		if (CS_INVALID_FILENAME == i32Status)
+		{
+			// Display message but continue on using defaults.
+			_ftprintf(stdout, _T("\nCannot find %s - using default parameters."), szIniFile);
+		}
+		else
+		{
+
+			// Otherwise the call failed.  If the call did fail we should free the CompuScope
+			// system so it's available for another application
+			DisplayErrorString(i32Status);
+			CsFreeSystem(g_hSystem[0]);
+			return(-1);
+		}
+	}
+
+	i32Status = CsAs_ConfigureSystem(g_hSystem[1], (int)CsSysInfo.u32ChannelCount,
 		(int)CalculateTriggerCountFromConfig(&CsSysInfo, (LPCTSTR)szIniFile),
 		(LPCTSTR)szIniFile, &u32Mode);
 
@@ -352,7 +397,7 @@ int _tmain()
 			// Otherwise the call failed.  If the call did fail we should free the CompuScope
 			// system so it's available for another application
 			DisplayErrorString(i32Status);
-			CsFreeSystem(g_hSystem);
+			CsFreeSystem(g_hSystem[1]);
 			return(-1);
 		}
 	}
@@ -415,55 +460,118 @@ int _tmain()
 	}
 
 
+	// if we're not doing analysis then we're not using the GPU
+	if (!g_GpuConfig.bDoAnalysis)
+	{
+		g_GpuConfig.bUseGpu = FALSE;
+	}
+
+	// bUseGpu being true implies that we're doing analysis
+	if (g_GpuConfig.bUseGpu)
+	{
+		// Initialize cuda device.  If i32MaxBlocks or i32MaxThreadsPerBlock were -1 we set them to the maximum
+		cudaStatus = InitializeCudaDevice(i32CudaDevice, &i32MaxBlocks, &i32MaxThreadsPerBlock, &bPinGenericMemory);
+		if (cudaStatus != cudaSuccess)
+		{
+			fprintf(stderr, "\ncuda error %d\n", cudaStatus);
+			CsFreeSystem(g_hSystem);
+			return (-1);
+		}
+		// our streaming uses a buffer allocated by our kernel driver, so we need to be able to map it
+		// onto the GPU using cudaHostRegister and cudaGetDevicePointer
+		if (!bPinGenericMemory)
+		{
+			fprintf(stderr, "\nPinned generic memory is needed for streaming but is not available.\nExiting program\n");
+			CsFreeSystem(g_hSystem);
+			return (-1);
+		}
+
+		if (g_GpuConfig.i32GpuBlocks > i32MaxBlocks || -1 == g_GpuConfig.i32GpuBlocks)
+		{
+			fprintf(stderr, "\nBlock count is too big, changed from %d blocks to %d blocks\n", g_GpuConfig.i32GpuBlocks, i32MaxBlocks);
+			g_GpuConfig.i32GpuBlocks = i32MaxBlocks;
+		}
+		if (-1 == g_GpuConfig.i32GpuBlocks) // -1 means use the maximum
+		{
+			g_GpuConfig.i32GpuBlocks = i32MaxBlocks;
+		}
+		if (g_GpuConfig.i32GpuThreads > i32MaxThreadsPerBlock)
+		{
+			fprintf(stderr, "\nThreads per block is too big, changed from %d threads to %d threads\n", g_GpuConfig.i32GpuThreads, i32MaxThreadsPerBlock);
+			g_GpuConfig.i32GpuThreads = i32MaxThreadsPerBlock;
+		}
+		if (-1 == g_GpuConfig.i32GpuThreads) // -1 means use the maximum
+		{
+			g_GpuConfig.i32GpuThreads = i32MaxThreadsPerBlock;
+		}
+		if (0 == g_GpuConfig.i32GpuThreads)
+		{
+			_ftprintf(stderr, "\nGPU thread count cannot be 0, changed to 1\n");
+			g_GpuConfig.i32GpuThreads = 1;
+		}
+	}
+
 	// Streaming Configuration.
 	// Validate if the board supports hardware streaming. If  it is not supported, 
 	// we'll exit gracefully.
-	i32Status = InitializeStream(g_hSystem);
+	i32Status = InitializeStream(g_hSystem[0]);
+	i32Status = InitializeStream(g_hSystem[1]);
 	if (CS_FAILED(i32Status))
 	{
 		// Error string was displayed in InitializeStream
-		CsFreeSystem(g_hSystem);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
 		return (-1);
 	}
 
 	// Prepare streaming by deleting all existing data file that have the same file name
 	if (0 == Prepare_Cleanup())
 	{
-		CsFreeSystem(g_hSystem);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
 		return (-1);
 	}
 
 
 	// Create events for stream data acquisition
-	g_hStreamStarted = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hStreamAbort = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hStreamError = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hThreadReadyForStream = CreateEvent(NULL, FALSE, FALSE, NULL);
-	if (NULL == g_hStreamStarted || NULL == g_hStreamAbort || NULL == g_hStreamError || NULL == g_hThreadReadyForStream)
+	g_hStreamStarted[0] = CreateEvent(NULL, TRUE, FALSE, NULL);
+	g_hStreamAbort[0] = CreateEvent(NULL, TRUE, FALSE, NULL);
+	g_hStreamError[0] = CreateEvent(NULL, TRUE, FALSE, NULL);
+	g_hThreadReadyForStream[0] = CreateEvent(NULL, FALSE, FALSE, NULL);
+	g_hStreamStarted[1] = CreateEvent(NULL, TRUE, FALSE, NULL);
+	g_hStreamAbort[1] = CreateEvent(NULL, TRUE, FALSE, NULL);
+	g_hStreamError[1] = CreateEvent(NULL, TRUE, FALSE, NULL);
+	g_hThreadReadyForStream[1] = CreateEvent(NULL, FALSE, FALSE, NULL);
+	if (NULL == g_hStreamStarted[0] || NULL == g_hStreamAbort[0] || NULL == g_hStreamError[0] || NULL == g_hThreadReadyForStream[0] || NULL == g_hStreamStarted[1] || NULL == g_hStreamAbort[1] || NULL == g_hStreamError[1] || NULL == g_hThreadReadyForStream[1])
 	{
 		_ftprintf(stderr, _T("\nUnable to create events for synchronization.\n"));
-		CsFreeSystem(g_hSystem);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
 		return (-1);
 	}
 
 	// Commit the values to the driver.  This is where the values get sent to the
 	// hardware.  Any invalid parameters will be caught here and an error returned.
-	i32Status = CsDo(g_hSystem, ACTION_COMMIT);
+	i32Status = CsDo(g_hSystem[0], ACTION_COMMIT);
+	i32Status = CsDo(g_hSystem[1], ACTION_COMMIT);
 	if (CS_FAILED(i32Status))
 	{
 		DisplayErrorString(i32Status);
-		CsFreeSystem(g_hSystem);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
 		return (-1);
 	}
 
 	// After ACTION_COMMIT, the sample size may change.
 	// Get user's acquisition data to use for various parameters for transfer
 	g_CsAcqCfg.u32Size = sizeof(CSACQUISITIONCONFIG);
-	i32Status = CsGet(g_hSystem, CS_ACQUISITION, CS_CURRENT_CONFIGURATION, &g_CsAcqCfg);
+	i32Status = CsGet(g_hSystem[0], CS_ACQUISITION, CS_CURRENT_CONFIGURATION, &g_CsAcqCfg);
+	i32Status = CsGet(g_hSystem[1], CS_ACQUISITION, CS_CURRENT_CONFIGURATION, &g_CsAcqCfg);
 	if (CS_FAILED(i32Status))
 	{
 		DisplayErrorString(i32Status);
-		CsFreeSystem(g_hSystem);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
 		return (-1);
 	}
 
@@ -471,11 +579,13 @@ int _tmain()
 	// We can get this value from driver or calculate the following formula
 	// g_llTotalSamplesConfig = (g_CsAcqCfg.i64SegmentSize + SegmentTail_Size) * (g_CsAcqCfg.u32Mode&CS_MASKED_MODE) * g_CsAcqCfg.u32SegmentCount;
 
-	i32Status = CsGet(g_hSystem, 0, CS_STREAM_TOTALDATA_SIZE_BYTES, &g_llTotalSamplesConfig);
+	i32Status = CsGet(g_hSystem[0], 0, CS_STREAM_TOTALDATA_SIZE_BYTES, &g_llTotalSamplesConfig);
+	i32Status = CsGet(g_hSystem[1], 0, CS_STREAM_TOTALDATA_SIZE_BYTES, &g_llTotalSamplesConfig);
 	if (CS_FAILED(i32Status))
 	{
 		DisplayErrorString(i32Status);
-		CsFreeSystem(g_hSystem);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
 		return (-1);
 	}
 
@@ -485,41 +595,49 @@ int _tmain()
 
 	printf("\n The Board Count: %u\n", CsSysInfo.u32BoardCount);
 	//  Create threads for Stream. In M/S system, we have to create one thread per card
-	for (n = 1, i = 0; n <= CsSysInfo.u32BoardCount; n++, i++)
+	//for (n = 1, i = 0; n <= CsSysInfo.u32BoardCount; n++, i++)
+	// 2 cards in the same CardStreamThread 
+	for (n = 1, i = 0; n <= 1; n++, i++)
 	{
 		g_hThread[i] = (HANDLE)CreateThread(NULL, 0, CardStreamThread, &n, 0, &dwThreadId);
 		if ((HANDLE)(INT_PTR)-1 == g_hThread[i])
 		{
 			// Fail to create the streaming thread for the n card.
 			// Set the event g_hStreamAbort to terminate all threads
-			SetEvent(g_hStreamAbort);
+			SetEvent(g_hStreamAbort[i]);
 			_ftprintf(stderr, _T("\nUnable to create thread for card %d."), n);
-			CsFreeSystem(g_hSystem);
+			CsFreeSystem(g_hSystem[i]);
 			return (-1);
 		}
 		else
 		{
 			// Wait for the event g_hThreadReadyForStream to make sure that the thread was successfully created and are ready for stream
-			if (WAIT_TIMEOUT == WaitForSingleObject(g_hThreadReadyForStream, 10000))
+			if (WAIT_TIMEOUT == WaitForSingleObject(g_hThreadReadyForStream[i], 10000))
 			{
 				// Something is wrong. It is not suppose to take that long
 				// Set the event g_hStreamAbort to terminate all threads
 				_ftprintf(stderr, _T("\nThread initialization error on card %d."), n);
-				SetEvent(g_hStreamAbort);
-				CsFreeSystem(g_hSystem);
+				SetEvent(g_hStreamAbort[i]);
+				CsFreeSystem(g_hSystem[i]);
 				return (-1);
 			}
 		}
 	}
 
-	
 	// Start the streaming data acquisition
 	printf("\nStart streaming. Press ESC to abort\n\n");
-	i32Status = CsDo(g_hSystem, ACTION_START);
+	i32Status = CsDo(g_hSystem[0], ACTION_START);
 	if (CS_FAILED(i32Status))
 	{
 		DisplayErrorString(i32Status);
-		CsFreeSystem(g_hSystem);
+		CsFreeSystem(g_hSystem[0]);
+		return (-1);
+	}
+	i32Status = CsDo(g_hSystem[1], ACTION_START);
+	if (CS_FAILED(i32Status))
+	{
+		DisplayErrorString(i32Status);
+		CsFreeSystem(g_hSystem[1]);
 		return (-1);
 	}
 
@@ -527,7 +645,8 @@ int _tmain()
 
 	// Set the event g_hStreamStarted so that the other threads can start to transfer data
 	Sleep(g_StreamConfig.u32DelayStartTransfer);		// Only for debug
-	SetEvent(g_hStreamStarted);
+	SetEvent(g_hStreamStarted[0]);
+	SetEvent(g_hStreamStarted[1]);
 
 	pre_current_time = clock();
 	pre_time = ((double)(pre_current_time - pre_start_time)) / CLOCKS_PER_SEC * 1000;
@@ -544,7 +663,8 @@ int _tmain()
 			switch (toupper(_getch()))
 			{
 			case 27:			// ESC key -> abort
-				SetEvent(g_hStreamAbort);
+				SetEvent(g_hStreamAbort[0]);
+				SetEvent(g_hStreamAbort[1]);
 				bDone = TRUE;
 				break;
 			case 'F':			// F key -> force trigger
@@ -559,11 +679,12 @@ int _tmain()
 		// Quit if elapsed time greater than our setting. 
 		if (u32TickNow - u32TickStart >= g_StreamConfig.u32TimeCounter)
 		{
-			SetEvent(g_hStreamAbort);
+			SetEvent(g_hStreamAbort[0]);
+			SetEvent(g_hStreamAbort[1]);
 			bDone = TRUE;
 		}
 
-		dwWaitStatus = WaitForMultipleObjects(CsSysInfo.u32BoardCount, g_hThread, TRUE, 1000);
+		dwWaitStatus = WaitForMultipleObjects(2, g_hThread, TRUE, 1000);
 		if (WAIT_OBJECT_0 == dwWaitStatus)
 		{
 			// All Streaming threads have terminated
@@ -583,10 +704,12 @@ int _tmain()
 	}
 
 	//	Abort the current acquisition 
-	CsDo(g_hSystem, ACTION_ABORT);
+	CsDo(g_hSystem[0], ACTION_ABORT);
+	CsDo(g_hSystem[1], ACTION_ABORT);
 
 	// Free the CompuScope system and any resources it's been using
-	i32Status = CsFreeSystem(g_hSystem);
+	i32Status = CsFreeSystem(g_hSystem[0]);
+	i32Status = CsFreeSystem(g_hSystem[1]);
 
 	if (g_GpuConfig.bUseGpu)
 	{
@@ -602,11 +725,11 @@ int _tmain()
 	}
 
 	// Check some events to see if there was any errors
-	if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError, 0))
+	if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[1], 0))
 	{
 		_ftprintf(stdout, _T("\nStream aborted on error.\n"));
 	}
-	else if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort, 0))
+	else if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[1], 0))
 	{
 		_ftprintf(stdout, _T("\nStream aborted by user.\n"));
 	}
@@ -633,7 +756,7 @@ int _tmain()
 			dSystemTotalTime += diff_time[i];
 		}
 
-		if (display_result==1) {
+		if (display_result == 1) {
 			DisplayResults(1,
 				g_GpuConfig.bUseGpu,
 				g_CsAcqCfg.u32Mode & CS_MASKED_MODE, // mask of the constant that loaded the expert firmware
@@ -647,7 +770,7 @@ int _tmain()
 		}
 
 		FILE* AnalysisFile = fopen("Analysis.txt", "a");
-		UpdateProgress(u32TickNow - u32TickStart, llSystemTotalData* g_CsSysInfo.u32SampleSize, AnalysisFile);
+		UpdateProgress(u32TickNow - u32TickStart, llSystemTotalData * g_CsSysInfo.u32SampleSize, AnalysisFile);
 	}
 
 
@@ -790,7 +913,7 @@ void UpdateProgress(uInt32 u32Elapsed, LONGLONG llTotaBytes, FILE* AnalysisFile)
 			}
 		}
 		dTotal = 1.0 * llTotaBytes / 1000000.0;		// Mega samples
-		printf ("\rTotal: %0.2f MB, Rate: %6.2f MB/s, Elapsed time: %u:%02u:%02u  ", dTotal, dRate, h, m, s);
+		printf("\rTotal: %0.2f MB, Rate: %6.2f MB/s, Elapsed time: %u:%02u:%02u  ", dTotal, dRate, h, m, s);
 
 		if (AnalysisFile != NULL)
 		{
@@ -1028,19 +1151,31 @@ cudaError_t InitializeCudaDevice(int32 nDevice, int32* i32MaxBlocks, int32* i32M
 DWORD WINAPI CardStreamThread(void* CardIndex)
 {
 	uInt16 nCardIndex = *((uInt16*)CardIndex);
-	void* pBuffer1 = NULL;
-	void* pBuffer2 = NULL;
 
 
-	void* h_buffer1 = NULL;
-	void* h_buffer2 = NULL;
 
-	void* d_buffer1 = NULL;
-	void* d_buffer2 = NULL;
+	void* pBuffer11 = NULL; // Pointer to the buffer for card 1
+	void* pBuffer12 = NULL; // Pointer to the second buffer for card 1
+	void* pBuffer21 = NULL; // Pointer to the buffer for card 2
+	void* pBuffer22 = NULL; // Pointer to the second buffer for card 2
 
-	void* d_buffer = NULL;
-	void* pCurrentBuffer = NULL;
-	void* pWorkBuffer = NULL;
+
+	void* h_buffer11 = NULL; // Pointer to the host buffer for card 1
+	void* h_buffer12 = NULL; // Pointer to the second host buffer for card 1
+	void* h_buffer21 = NULL; // Pointer to the host buffer for card 2
+	void* h_buffer22 = NULL; // Pointer to the second host buffer for card 2
+
+	void* d_buffer11 = NULL; //	Pointer to the device buffer for card 1
+	void* d_buffer12 = NULL; // Pointer to the second device buffer for card 1
+	void* d_buffer21 = NULL; // Pointer to the device buffer for card 2
+	void* d_buffer22 = NULL; // Pointer to the second device buffer for card 2
+
+	void* d_buffer1 = NULL; // Pointer to the device buffer for card 1
+	void* pCurrentBuffer1 = NULL; // Pointer to the current buffer for card 1
+	void* pWorkBuffer1 = NULL; // Pointer to the work buffer for card 1
+	void* d_buffer2 = NULL; // Pointer to the device buffer for card 2
+	void* pCurrentBuffer2 = NULL; // Pointer to the current buffer for card 2
+	void* pWorkBuffer2 = NULL; // Pointer to the work buffer for card 2
 
 	// host pointers for receiving the processed data from GPU
 	double* h_odata = NULL;
@@ -1069,8 +1204,9 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 	BOOL				bDone = FALSE;
 	uInt32				u32LoopCount = 0;
-	uInt32				u32ErrorFlag = 0;
-	HANDLE				WaitEvents[2];
+	uInt32				u32ErrorFlag1 = 0;
+	uInt32				u32ErrorFlag2 = 0;
+	HANDLE				WaitEvents[4];
 	DWORD				dwWaitStatus;
 	DWORD				dwRetCode = 0;
 	DWORD				dwBytesSave = 0;
@@ -1078,8 +1214,10 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 	BOOL				bWriteSuccess = TRUE;
 	DWORD				dwFileFlag = g_StreamConfig.bFileFlagNoBuffering ? FILE_FLAG_NO_BUFFERING : 0;
 	TCHAR				szSaveFileName[MAX_PATH];
-	uInt32				u32ActualLength = 0;
-	uInt8				u8EndOfData = 0;
+	uInt32				u32ActualLength1 = 0;
+	uInt32				u32ActualLength2 = 0;
+	uInt8				u8EndOfData1 = 0;
+	uInt8				u8EndOfData2 = 0;
 	BOOL				bStreamCompletedSuccess = FALSE;
 	cudaError_t			cudaStatus = 0;
 
@@ -1097,7 +1235,6 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 	char				profilePath[256];		// Path to the profile file containing the profiling information
 	FILE*				profileFile = NULL;
-
 	// CUDA HyperParameters
 	uInt32				totalThreads;														// Total number of threads lanuched in the kernel
 	int					gridSize;															// Number of blocks in the grid		
@@ -1108,8 +1245,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 	int					corrMatrixSize; 													// Size of the correlation matrix
 	int					segmentSize;														// Size of one segment in the input data 
 
-
-
+	TCHAR msg[256] = { 0 };
 
 
 	LARGE_INTEGER temp, start_time = { 0 }, end_time = { 0 };
@@ -1118,23 +1254,22 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 	// Profiling variables
 	LARGE_INTEGER step_start_time, step_end_time, transfer_start_time, transfer_end_time, process_start_time, process_end_time;
-	double step_time = 0; 
+	double step_time = 0;
 	double transfer_time = 0;
 	double process_time = 0;
 	const char* experimentName = "Experiment_1"; // Change this for different experiments
 	double total_time = 0.0;
 
-	
-
 	snprintf(cmBinPath, sizeof(cmBinPath), "%s\\cm.bin", experimentLogDirectory);
 	snprintf(analysisPath, sizeof(analysisPath), "%s\\analysis.txt", experimentLogDirectory);
 	snprintf(profilePath, sizeof(profilePath), "%s\\profile.txt", experimentLogDirectory);
 
-	profileFile = fopen(profilePath, "w");
-	if (profileFile == NULL) {
-		fprintf(stderr, "Unable to open profile.txt for writing.\n");
-		ExitThread(1);
-	}
+	// Profiling variables
+		profileFile = fopen(profilePath, "w");
+		if (profileFile == NULL) {
+			fprintf(stderr, "Unable to open profile.txt for writing.\n");
+			ExitThread(1);
+		}
 
 	// Open the binary file containing the correlation matrices
 	binFile = fopen(cmBinPath, "ab");
@@ -1194,65 +1329,179 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 	_ftprintf(stderr, _T("\n(Actual buffer size used for data streaming = %u Bytes)\n"), g_StreamConfig.u32BufferSizeBytes);
 
-	i32Status = CsStmAllocateBuffer(g_hSystem, nCardIndex, g_StreamConfig.u32BufferSizeBytes, &pBuffer1);			
+	i32Status = CsStmAllocateBuffer(g_hSystem[0], nCardIndex, g_StreamConfig.u32BufferSizeBytes, &pBuffer11);
 	if (CS_FAILED(i32Status))
 	{
-		_ftprintf(stderr, _T("\nUnable to allocate memory for stream buffer 1.\n"));
+		_ftprintf(stderr, _T("\nUnable to allocate memory for stream buffer 11.\n"));
+		CloseHandle(hFile);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
+
+		DeleteFile(szSaveFileName);
+		ExitThread(1);
+		ExitThread(2);
+	}
+
+	i32Status = CsStmAllocateBuffer(g_hSystem[0], nCardIndex, g_StreamConfig.u32BufferSizeBytes, &pBuffer12);
+	if (CS_FAILED(i32Status))
+	{
+		_ftprintf(stderr, _T("\nUnable to allocate memory for stream buffer 12.\n"));
+		CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
+
 		CloseHandle(hFile);
 		DeleteFile(szSaveFileName);
 		ExitThread(1);
+		ExitThread(2);
 	}
 
-	i32Status = CsStmAllocateBuffer(g_hSystem, nCardIndex, g_StreamConfig.u32BufferSizeBytes, &pBuffer2);
+	i32Status = CsStmAllocateBuffer(g_hSystem[1], nCardIndex, g_StreamConfig.u32BufferSizeBytes, &pBuffer21);
 	if (CS_FAILED(i32Status))
 	{
-		_ftprintf(stderr, _T("\nUnable to allocate memory for stream buffer 2.\n"));
-		CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer1);
+		_ftprintf(stderr, _T("\nUnable to allocate memory for stream buffer 21.\n"));
+		CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+		CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
+
 		CloseHandle(hFile);
 		DeleteFile(szSaveFileName);
+		ExitThread(2);
+		ExitThread(1);
+	}
+
+	i32Status = CsStmAllocateBuffer(g_hSystem[1], nCardIndex, g_StreamConfig.u32BufferSizeBytes, &pBuffer22);
+	if (CS_FAILED(i32Status))
+	{
+		_ftprintf(stderr, _T("\nUnable to allocate memory for stream buffer 22.\n"));
+		CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+		CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+		CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+		CsFreeSystem(g_hSystem[0]);
+		CsFreeSystem(g_hSystem[1]);
+
+		CloseHandle(hFile);
+		DeleteFile(szSaveFileName);
+		ExitThread(2);
 		ExitThread(1);
 	}
 
 
 	if (g_GpuConfig.bUseGpu)
 	{
-		h_buffer1 = (unsigned char*)ALIGN_UP(pBuffer1, MEMORY_ALIGNMENT);
-		cudaStatus = cudaHostRegister(h_buffer1, (size_t)g_StreamConfig.u32BufferSizeBytes, cudaHostRegisterMapped);
+		h_buffer11 = (unsigned char*)ALIGN_UP(pBuffer11, MEMORY_ALIGNMENT);
+		cudaStatus = cudaHostRegister(h_buffer11, (size_t)g_StreamConfig.u32BufferSizeBytes, cudaHostRegisterMapped);
 		if (cudaStatus != cudaSuccess)
 		{
 			fprintf(stderr, "cudaHostRegister failed! Error code %d\n", cudaStatus);
-			CsFreeSystem(g_hSystem);
-			CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer1);
+			CsFreeSystem(g_hSystem[0]);
+			CsFreeSystem(g_hSystem[1]);
+
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
 			return cudaStatus;
 		}
-		h_buffer2 = (unsigned char*)ALIGN_UP(pBuffer2, MEMORY_ALIGNMENT);
-		cudaStatus = cudaHostRegister(h_buffer2, (size_t)g_StreamConfig.u32BufferSizeBytes, cudaHostRegisterMapped);
+		h_buffer12 = (unsigned char*)ALIGN_UP(pBuffer12, MEMORY_ALIGNMENT);
+		cudaStatus = cudaHostRegister(h_buffer12, (size_t)g_StreamConfig.u32BufferSizeBytes, cudaHostRegisterMapped);
 		if (cudaStatus != cudaSuccess)
 		{
 			fprintf(stderr, "cudaHostRegister failed! Error code %d\n", cudaStatus);
-			CsFreeSystem(g_hSystem);
-			CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer2);
-			cudaHostUnregister(h_buffer1);
+			CsFreeSystem(g_hSystem[0]);
+			CsFreeSystem(g_hSystem[1]);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
+			cudaHostUnregister(h_buffer11);
 			return cudaStatus;
 		}
-		cudaStatus = cudaHostGetDevicePointer((void**)&d_buffer1, (void*)h_buffer1, 0);
+		h_buffer21 = (unsigned char*)ALIGN_UP(pBuffer21, MEMORY_ALIGNMENT);
+		cudaStatus = cudaHostRegister(h_buffer21, (size_t)g_StreamConfig.u32BufferSizeBytes, cudaHostRegisterMapped);
+		if (cudaStatus != cudaSuccess)
+		{
+			fprintf(stderr, "cudaHostRegister failed! Error code %d\n", cudaStatus);
+			CsFreeSystem(g_hSystem[0]);
+			CsFreeSystem(g_hSystem[1]);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
+			return cudaStatus;
+		}
+		h_buffer22 = (unsigned char*)ALIGN_UP(pBuffer22, MEMORY_ALIGNMENT);
+		cudaStatus = cudaHostRegister(h_buffer22, (size_t)g_StreamConfig.u32BufferSizeBytes, cudaHostRegisterMapped);
+		if (cudaStatus != cudaSuccess)
+		{
+			fprintf(stderr, "cudaHostRegister failed! Error code %d\n", cudaStatus);
+			CsFreeSystem(g_hSystem[0]);
+			CsFreeSystem(g_hSystem[1]);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
+			cudaHostUnregister(h_buffer21);
+			return cudaStatus;
+		}
+		cudaStatus = cudaHostGetDevicePointer((void**)&d_buffer11, (void*)h_buffer11, 0);
 		if (cudaStatus != cudaSuccess)
 		{
 			fprintf(stderr, "cudaHostGetDevicePointer failed!  Error code %d\n", cudaStatus);
-			CsFreeSystem(g_hSystem);
-			CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer1);
-			cudaHostUnregister(h_buffer1);
-			cudaHostUnregister(h_buffer2);
+			CsFreeSystem(g_hSystem[0]);
+			CsFreeSystem(g_hSystem[1]);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
+			cudaHostUnregister(h_buffer11);
+			cudaHostUnregister(h_buffer12);
 			return cudaStatus;
 		}
-		cudaStatus = cudaHostGetDevicePointer((void**)&d_buffer2, (void*)h_buffer2, 0);
+		cudaStatus = cudaHostGetDevicePointer((void**)&d_buffer12, (void*)h_buffer12, 0);
 		if (cudaStatus != cudaSuccess)
 		{
 			fprintf(stderr, "cudaHostGetDevicePointer failed!  Error code %d\n", cudaStatus);
-			CsFreeSystem(g_hSystem);
-			CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer2);
-			cudaHostUnregister(h_buffer1);
-			cudaHostUnregister(h_buffer2);
+			CsFreeSystem(g_hSystem[0]);
+			CsFreeSystem(g_hSystem[1]);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
+			cudaHostUnregister(h_buffer11);
+			cudaHostUnregister(h_buffer12);
+			return cudaStatus;
+		}
+
+
+
+		cudaStatus = cudaHostGetDevicePointer((void**)&d_buffer21, (void*)h_buffer21, 0);
+		if (cudaStatus != cudaSuccess)
+		{
+			fprintf(stderr, "cudaHostGetDevicePointer failed!  Error code %d\n", cudaStatus);
+			CsFreeSystem(g_hSystem[0]);
+			CsFreeSystem(g_hSystem[1]);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
+			cudaHostUnregister(h_buffer21);
+			cudaHostUnregister(h_buffer22);
+			return cudaStatus;
+		}
+		cudaStatus = cudaHostGetDevicePointer((void**)&d_buffer22, (void*)h_buffer22, 0);
+		if (cudaStatus != cudaSuccess)
+		{
+			fprintf(stderr, "cudaHostGetDevicePointer failed!  Error code %d\n", cudaStatus);
+			CsFreeSystem(g_hSystem[0]);
+			CsFreeSystem(g_hSystem[1]);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
+			cudaHostUnregister(h_buffer21);
+			cudaHostUnregister(h_buffer22);
 			return cudaStatus;
 		}
 
@@ -1261,50 +1510,67 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 		// So far so good ...
 		// Let the main thread know that this thread is ready for stream
-		SetEvent(g_hThreadReadyForStream);
+		SetEvent(g_hThreadReadyForStream[0]);
+		SetEvent(g_hThreadReadyForStream[1]);
+
 
 		// Wait for the start acquisition event from the main thread
-		WaitEvents[0] = g_hStreamStarted;
-		WaitEvents[1] = g_hStreamAbort;
-		dwWaitStatus = WaitForMultipleObjects(2, WaitEvents, FALSE, INFINITE);
+		WaitEvents[0] = g_hStreamStarted[0];
+		WaitEvents[1] = g_hStreamStarted[1];
+		WaitEvents[2] = g_hStreamAbort[0];
+		WaitEvents[3] = g_hStreamAbort[1];
+
+
+
+
+
+		dwWaitStatus = WaitForMultipleObjects(4, WaitEvents, FALSE, INFINITE);
 
 		if ((WAIT_OBJECT_0 + 1) == dwWaitStatus)
 		{
 			// Aborted from user or error
-			CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer1);
-			CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer2);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
+			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer22);
 			CloseHandle(hFile);
 			if (g_GpuConfig.bUseGpu)
 			{
-				cudaHostUnregister(h_buffer1);
-				cudaHostUnregister(h_buffer2);
+				cudaHostUnregister(h_buffer11);
+				cudaHostUnregister(h_buffer12);
+				cudaHostUnregister(h_buffer21);
+				cudaHostUnregister(h_buffer22);
 
 			}
 			DeleteFile(szSaveFileName);
 			ExitThread(1);
+			ExitThread(2);
 		}
 
 		// Convert the transfer size to BYTEs or WORDs depending on the card.
 		u32TransferSizeSamples = g_StreamConfig.u32BufferSizeBytes / g_CsSysInfo.u32SampleSize;
-		
-		segmentSize = demodulationWindowSize * 4;												// Size of one segment in the input data
+		int u32TransferSizeSamples1 = 0;
+
+		u32TransferSizeSamples1 = u32TransferSizeSamples * 2;
+
+		segmentSize = demodulationWindowSize * 2;												// Size of one segment in the input data
 		corrMatrixSize = demodulationWindowSize * demodulationWindowSize;				// Size of the correlation matrix 
-		totalSegNum = u32TransferSizeSamples / segmentSize;										// Total number of segments in the data transfer
-		totalThreads = u32TransferSizeSamples * demodulationWindowSize / 4;					// Total number of threads lanuched in the kernel
+		totalSegNum = u32TransferSizeSamples1 / segmentSize / 2;										// Total number of segments in the data transfer
+		totalThreads = u32TransferSizeSamples1 * demodulationWindowSize / 4;					// Total number of threads lanuched in the kernel
 		sharedSegmentSize = blockSize * 4 / demodulationWindowSize;							// Size of the shared memory segment of one block
 		gridSize = (totalThreads + blockSize - 1) / blockSize;								// Number of blocks in the grid
 
 
 		if (correlation_type == 0) {
 			// Allocate memory for the correlation matrix (aggregated and reduced), hodata and scaling factors
-		
+
 			h_odata = (double*)malloc(corrMatrixSize * sizeof(double));		// Output data from the GPU
 
 			int aggregatedCorreMatrixSize = totalSegNum * corrMatrixSize; // Size of correlation matrix for one data transfer
-		
+
 
 			cudaStatus = cudaMalloc((void**)&d_aggregatedCorrMatrix, aggregatedCorreMatrixSize * sizeof(double));		// Allocate memory for the correlation matrix
-		
+
 			if (cudaStatus != cudaSuccess) {
 				// Handle error...
 
@@ -1334,7 +1600,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 		else if (correlation_type == 1) {
 			// Allocate memory for d_correlationMatrixA, dcorrelationMatrixB, d_g2Matrix, d_reducdeCorrMatrixA, d_reducedCorrMatrixB, d_scaling_factors and h_odata
 			h_odata = (double*)malloc(corrMatrixSize * corrMatrixSize * sizeof(double));		// Output data from the GPU
-			
+
 
 
 			// Declare the variable before using it
@@ -1410,32 +1676,32 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			return cudaErrorInitializationError;
 		}
 
-		if (g_StreamConfig.bCascadeResult == 0) fptr = fopen("Analysis.txt", "w");
 
-		//FILE* fptr;
-		//if (g_StreamConfig.bCascadeResult == 0) fptr = fopen("Analysis.txt", "w");
-		//if (g_StreamConfig.bCascadeResult == 1) fptr = fopen("Analysis.txt", "a");
-			return 1;
-		//fclose(fptr);
+		fprintf(analysisFile, "//////\nBuffer size (Samples)\n%d\nSampling Rate (Hz)\n%d\n///\n", u32TransferSizeSamples, g_CsAcqCfg.i64SampleRate);
 
 
-    	// Steam acqusition has started.
+
+
+
+
+		// Steam acqusition has started.
 		// loop until either we've done the number of segments we want, or
 		// the ESC key was pressed to abort. While we loop, we transfer data into
 		// pCurrentBuffer and save pWorkBuffer to hard disk
 
 
 		while (!(bDone || bStreamCompletedSuccess))
-		{	
+		{
 			if (timer == TRUE) {
 				QueryPerformanceCounter(&step_start_time);		// mark the start time
-				}
+			}
 
 			// Check if user has aborted or an error has occured
-			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort, 0))
+			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[1], 0))
 				break;
-			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError, 0))
+			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[1], 0))
 				break;
+
 
 			// Determine where new data transfer data will go. We alternate
 			// between our 2 streaming buffers. d_buffer is the pointer to the
@@ -1443,11 +1709,13 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 			if (u32LoopCount & 1)
 			{
-				pCurrentBuffer = pBuffer2;			// pBuffer2 is the current buffer
+				pCurrentBuffer1 = pBuffer12;			// pBuffer2 is the current buffer
+				pCurrentBuffer2 = pBuffer22;			// pBuffer2 is the current buffer
 			}
 			else
 			{
-				pCurrentBuffer = pBuffer1;			// pBuffer1 is the current buffer	
+				pCurrentBuffer1 = pBuffer11;			// pBuffer1 is the current buffer	
+				pCurrentBuffer2 = pBuffer21;			// pBuffer1 is the current buffer	
 			}
 
 			if (g_GpuConfig.bDoAnalysis)
@@ -1456,10 +1724,11 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 
 
-			if (timer == TRUE) 
+			if (timer == TRUE)
 				QueryPerformanceCounter(&transfer_start_time);  // mark the start time of data transfer and processing
 
-			i32Status = CsStmTransferToBuffer(g_hSystem, nCardIndex, pCurrentBuffer, u32TransferSizeSamples);    // Start to Transfer data from the card to the buffer
+			i32Status = CsStmTransferToBuffer(g_hSystem[0], 1, pCurrentBuffer1, u32TransferSizeSamples);    // Start to Transfer data from the card to the buffer
+			i32Status = CsStmTransferToBuffer(g_hSystem[1], 1, pCurrentBuffer2, u32TransferSizeSamples);    // Start to Transfer data from the card to the buffer
 
 			if (CS_FAILED(i32Status))
 			{
@@ -1472,23 +1741,24 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 				}
 				break;
 			}
-			
+
 
 			// do processing here on dbuffer
-			
-			if (NULL != d_buffer)
+
+			if (NULL != d_buffer1 || NULL != d_buffer2)
 			{
 				if (g_GpuConfig.bUseGpu)
 				{
 
-					if (timer == TRUE) 
+					if (timer == TRUE)
 						QueryPerformanceCounter(&process_start_time);	 // mark the start time of data processing	
 
 					if (correlation_type == 0) {
 						// perform cross correlation compute using GPU on the input data
 						cudaStatus = ComputeCrossCorrelationGPU(u32LoopCount,
-							(short*)d_buffer,
-							u32TransferSizeSamples,
+							(short*)d_buffer1,
+							(short*)d_buffer2,
+							u32TransferSizeSamples1,
 							totalThreads,
 							gridSize,
 							blockSize,
@@ -1509,8 +1779,9 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 					else if (correlation_type == 1) {
 						// perform g2 correlation compute using GPU on the input data
 						cudaStatus = ComputeG2CorrelationGPU(u32LoopCount,
-							(short*)d_buffer,
-							u32TransferSizeSamples,
+							(short*)d_buffer1,
+							(short*)d_buffer2,
+							u32TransferSizeSamples1,
 							totalThreads,
 							gridSize,
 							blockSize,
@@ -1530,8 +1801,8 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 							binFile,
 							analysisFile);
 					}
-					
-					
+
+
 
 					if (timer == TRUE) {
 						QueryPerformanceCounter(&process_end_time);  // mark the end time of data processing
@@ -1546,9 +1817,9 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 					}
 				}
 
-				if (use_cpu == TRUE && NULL != pWorkBuffer) // use CPU for verify the correctness of the GPU Calculation
+				if (use_cpu == TRUE && NULL != pWorkBuffer1) // use CPU for verify the correctness of the GPU Calculation
 				{
-					i32Status = CPU_Equation_PlusOne(pWorkBuffer, u32TransferSizeSamples, h_odata);
+					i32Status = CPU_Equation_PlusOne(pWorkBuffer1, u32TransferSizeSamples, h_odata);
 
 					if (CS_FAILED(i32Status))
 					{
@@ -1558,14 +1829,14 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 					}
 				}
 			}
-			
+
 
 			// Save the data to the hard disk
-			if (g_StreamConfig.bSaveToFile && NULL != pWorkBuffer)
+			if (g_StreamConfig.bSaveToFile && NULL != pWorkBuffer1)
 			{
 				// While data transfer of the current buffer is in progress, save the data from pWorkBuffer to hard disk
 				dwBytesSave = 0;
-				bWriteSuccess = WriteFile(hFile, pWorkBuffer, g_StreamConfig.u32BufferSizeBytes, &dwBytesSave, NULL);
+				bWriteSuccess = WriteFile(hFile, pWorkBuffer1, g_StreamConfig.u32BufferSizeBytes, &dwBytesSave, NULL);
 				if (!bWriteSuccess || dwBytesSave != g_StreamConfig.u32BufferSizeBytes)
 				{
 					_ftprintf(stdout, _T("\nWriteFile() error on card %d !!! (GetLastError() = 0x%x\n"), nCardIndex, GetLastError());
@@ -1574,20 +1845,19 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 				}
 			}
 
-			if (NULL != pWorkBuffer && useIPC) {
-				int result = handleClientRequests(raw_signal_hPipe, pWorkBuffer, h_odata, 0, 200);  // 200 is the number of bytes of signal to send, check request from client and send data
-				if (result == 4) {
-					SetEvent(g_hStreamError);
-					bDone = TRUE;
-				}
+			if (NULL != pWorkBuffer1 && useIPC) {
+				int result = handleClientRequests(raw_signal_hPipe, pWorkBuffer1, pWorkBuffer2, h_odata, 0, 200, 0);  // 200 is the number of bytes to send, check request from client and send data
 			}
-			
+
 
 			// Wait for the DMA transfer on the current buffer to complete so we can loop back around to start a new one.
 			// The calling thread will sleep until the transfer completes
-			i32Status = CsStmGetTransferStatus(g_hSystem, nCardIndex, g_StreamConfig.u32TransferTimeout, &u32ErrorFlag, &u32ActualLength, &u8EndOfData);
+			i32Status = CsStmGetTransferStatus(g_hSystem[0], 1, g_StreamConfig.u32TransferTimeout, &u32ErrorFlag1, &u32ActualLength1, &u8EndOfData1);
 
-			if (timer ==TRUE) {
+			i32Status = CsStmGetTransferStatus(g_hSystem[1], 1, g_StreamConfig.u32TransferTimeout, &u32ErrorFlag2, &u32ActualLength2, &u8EndOfData2);
+
+
+			if (timer == TRUE) {
 				QueryPerformanceCounter(&transfer_end_time);  // Mark the end time of data transfer and processing
 				transfer_time = ((double)(transfer_end_time.QuadPart - transfer_start_time.QuadPart)) / freq;  // Calculate the time taken for data transfer and processing
 
@@ -1597,12 +1867,12 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			if (CS_SUCCEEDED(i32Status))
 			{
 				// Calculate the total of data transfered so far for this card
-				g_llCardTotalData[nCardIndex - 1] += u32ActualLength;//////////////////////////////////////////////////////////////////////////////////////////////////////////
-				bStreamCompletedSuccess = (0 != u8EndOfData);
+				g_llCardTotalData[nCardIndex - 1] += (u32ActualLength1 + u32ActualLength2);//////////////////////////////////////////////////////////////////////////////////////////////////////////
+				bStreamCompletedSuccess = (0 != u8EndOfData1 && 0 != u8EndOfData2);
 
-				if (0 != u32ErrorFlag)
+				if (0 != u32ErrorFlag1 && 0 != u32ErrorFlag2)
 				{
-					if (STM_TRANSFER_ERROR_FIFOFULL & u32ErrorFlag)
+					if (STM_TRANSFER_ERROR_FIFOFULL & u32ErrorFlag1 & u32ErrorFlag2)
 					{
 						// The Fifo full error has occured at the card level which results data lost.
 						// This error occurs when the application is not fast enough to transfer data.
@@ -1610,7 +1880,8 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 						{
 							// g_StreamConfig.bErrorHandling != 0
 							// Stop as soon as we recieve the FIFO full error from the card
-							SetEvent(g_hStreamError);
+							SetEvent(g_hStreamError[0]);
+							SetEvent(g_hStreamError[1]);
 							_ftprintf(stdout, _T("\nFifo full detected on the card %d !!!\n"), nCardIndex);
 							bDone = TRUE;
 						}
@@ -1627,10 +1898,11 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 							// Do nothing here, go backto the loop CsStmTransferToBuffer() CsStmGetTransferStatus()
 						}
 					}
-					if (u32ErrorFlag & STM_TRANSFER_ERROR_CHANNEL_PROTECTION)
+					if (u32ErrorFlag1 & u32ErrorFlag2 & STM_TRANSFER_ERROR_CHANNEL_PROTECTION)
 					{
 						// Channel protection error as coccrued
-						SetEvent(g_hStreamError);
+						SetEvent(g_hStreamError[0]);
+						SetEvent(g_hStreamError[1]);
 						_ftprintf(stdout, _T("\nChannel Protection Error on Board %d!!!\n"), nCardIndex);
 						bDone = TRUE;
 					}
@@ -1638,7 +1910,8 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 			else
 			{
-				SetEvent(g_hStreamError);
+				SetEvent(g_hStreamError[0]);
+				SetEvent(g_hStreamError[1]);
 				bDone = TRUE;
 
 				if (CS_STM_TRANSFER_TIMEOUT == i32Status)
@@ -1664,25 +1937,27 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 
 
-			pWorkBuffer = pCurrentBuffer;
+			pWorkBuffer1 = pCurrentBuffer1;
+			pWorkBuffer2 = pCurrentBuffer2;
 
-			if (pCurrentBuffer == pBuffer1) {
-				d_buffer = d_buffer1;
+			if (pCurrentBuffer1 == pBuffer11 && pCurrentBuffer2 == pBuffer21) {
+				d_buffer1 = d_buffer11;
+				d_buffer2 = d_buffer21;
 			}
 
 			else {
-				d_buffer = d_buffer2;
+				d_buffer1 = d_buffer12;
+				d_buffer2 = d_buffer22;
 			}
 
 			u32LoopCount++;
 
 
-
 			if (timer == TRUE) {
 				SYSTEMTIME time;
 				GetLocalTime(&time);
-				QueryPerformanceCounter(&step_end_time);  
-				step_time = ((double)(step_end_time.QuadPart - step_start_time.QuadPart)) / freq;  
+				QueryPerformanceCounter(&step_end_time);
+				step_time = ((double)(step_end_time.QuadPart - step_start_time.QuadPart)) / freq;
 				fprintf(profileFile, "Transfer start timestamp: %02d:%02d:%02d.%03d ,One Step Time: %.2f ms, Transfer and process Time: %.2f ms, GPU Process Time: %.2f ms\n", time.wHour, time.wMinute, time.wSecond, time.wMilliseconds, step_time, transfer_time, process_time);
 			}
 		}
@@ -1693,23 +1968,23 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			QueryPerformanceCounter((LARGE_INTEGER*)&start_time);
 		}
 
-		if (bStreamCompletedSuccess && g_StreamConfig.bSaveToFile && NULL != pWorkBuffer)
+		if (bStreamCompletedSuccess && g_StreamConfig.bSaveToFile && NULL != pWorkBuffer1)
 		{
-			u32WriteSize = u32ActualLength * g_CsSysInfo.u32SampleSize;
+			u32WriteSize = u32ActualLength1 * g_CsSysInfo.u32SampleSize;
 
 			//Apply a right padding with the sector size
 			if (g_StreamConfig.bFileFlagNoBuffering)
 			{
-				uInt8* pBufTmp = pWorkBuffer;
+				uInt8* pBufTmp = pWorkBuffer1;
 				u32WriteSize = ((u32WriteSize - 1) / u32SectorSize + 1) * u32SectorSize;
 
 				// clear padding bytes
-				if (u32WriteSize > u32ActualLength * g_CsSysInfo.u32SampleSize)
-					memset(&pBufTmp[u32ActualLength * g_CsSysInfo.u32SampleSize], 0, u32WriteSize - u32ActualLength * g_CsSysInfo.u32SampleSize);
+				if (u32WriteSize > u32ActualLength1 * g_CsSysInfo.u32SampleSize)
+					memset(&pBufTmp[u32ActualLength1 * g_CsSysInfo.u32SampleSize], 0, u32WriteSize - u32ActualLength1 * g_CsSysInfo.u32SampleSize);
 			}
 
 			// Save the data from pWorkBuffer to hard disk
-			bWriteSuccess = WriteFile(hFile, pWorkBuffer, u32WriteSize, &dwBytesSave, NULL);
+			bWriteSuccess = WriteFile(hFile, pWorkBuffer1, u32WriteSize, &dwBytesSave, NULL);
 			if (!bWriteSuccess || dwBytesSave != u32WriteSize)
 			{
 				_ftprintf(stdout, _T("\nWriteFile() error on card %d !!! (GetLastError() = 0x%x\n"), nCardIndex, GetLastError());
@@ -1722,16 +1997,19 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			diff_time[nCardIndex - 1] += ((double)end_time.QuadPart - (double)start_time.QuadPart) / freq;
 		}
 		// Close the data file and free all streaming buffers
-		if (g_StreamConfig.bSaveToFile)
-			CloseHandle(hFile);
+		if (g_StreamConfig.bSaveToFile)		CloseHandle(hFile);
 
 		if (g_GpuConfig.bUseGpu)
 		{
-			cudaHostUnregister(h_buffer1);
-			cudaHostUnregister(h_buffer2);
+			cudaHostUnregister(h_buffer11);
+			cudaHostUnregister(h_buffer21);
+			cudaHostUnregister(h_buffer12);
+			cudaHostUnregister(h_buffer22);
 		}
-		CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer1);
-		CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer2);
+		CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer11);
+		CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer21);
+		CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer12);
+		CsStmFreeBuffer(g_hSystem, nCardIndex, pBuffer22);
 
 		// Free the memory on the GPU and CPU, and destroy the cuBLAS handle
 		free(h_odata);
@@ -1751,8 +2029,10 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			cudaFree(d_reducedCorrMatrixB);
 			cudaFree(d_scaling_factors);
 		}
-		
-		
+
+
+
+
 
 		if (bStreamCompletedSuccess)
 		{
@@ -1766,7 +2046,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 		if (timer == TRUE) {
 			fclose(profileFile);
 		}
-		
+
 		// Close the binary file, and the analysis file
 		fclose(binFile);
 		fclose(analysisFile);
@@ -1899,4 +2179,3 @@ void DisplayResults(int stream,
 		}
 	}
 }
-
