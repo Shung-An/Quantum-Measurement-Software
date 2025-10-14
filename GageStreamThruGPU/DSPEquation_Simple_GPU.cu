@@ -7,9 +7,6 @@
 #include <time.h>
 #include <cublas_v2.h>
 #include <iostream>
-#include <chrono> // For high-resolution time
-#include <ctime>  // For formatting date and time
-#include <cuda.h>
 
 
 
@@ -28,32 +25,15 @@ void checkCublas(cublasStatus_t result, const char* msg) {
 	}
 }
 
-// Function to get the current time in HH:mm:ss.fff format
-void getCurrentTime(char* timeBuffer, size_t bufferSize) {
-	SYSTEMTIME time;
-	GetLocalTime(&time);
-	snprintf(timeBuffer, bufferSize, "%02d:%02d:%02d.%03d",
-		time.wHour, time.wMinute, time.wSecond, time.wMilliseconds);
-}
 
 void writeResultsToFile(FILE* AnalysisFile, FILE* binFile, int u32LoopCount, double* h_odata, int corrMatrixSize) {
 	char timeBuffer[20]; // Buffer to hold time in HH:mm:ss.fff format
 	getCurrentTime(timeBuffer, sizeof(timeBuffer)); // Fetch current time
 
-	// Write results to Analysis file
-	if (AnalysisFile) {
-		fprintf(AnalysisFile, "%d\t%s\t", u32LoopCount, timeBuffer); // Add loop count and time
-		for (int i = 0; i < corrMatrixSize; ++i) {
-			fprintf(AnalysisFile, "%.10f\t", h_odata[i]);
-		}
-		fprintf(AnalysisFile, "\n");
-	}
-
-	// Write results to binary file for Matlab use
-	if (binFile) {
-		fwrite(h_odata, sizeof(double), corrMatrixSize, binFile);
-	}
-}
+__global__ void demodulationCrossCorrelation(
+	short* dataA,
+	short* dataB,
+	__int64 numElements,               // total samples across BOTH channels OR per-channel (see flag)
 
 
 // Demodulation at 8 correlation matrix with shared memory, light version
@@ -242,7 +222,7 @@ extern "C" cudaError_t ComputeCrossCorrelationGPU(const __int64 u32LoopCount,			
 	checkCuda(cudaDeviceSynchronize(), "Kernel execution failed");
 	 
 	// Write results to Analysis file
-	writeResultsToFile(AnalysisFile, binFile, u32LoopCount, h_odata, corrMatrixSize);
+	if (AnalysisFile) {
 
 	return cudaStatus;
 }

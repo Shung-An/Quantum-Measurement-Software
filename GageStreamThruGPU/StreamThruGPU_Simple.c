@@ -1410,11 +1410,12 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			return cudaErrorInitializationError;
 		}
 
+		if (g_StreamConfig.bCascadeResult == 0) fptr = fopen("Analysis.txt", "w");
 
 		//FILE* fptr;
 		//if (g_StreamConfig.bCascadeResult == 0) fptr = fopen("Analysis.txt", "w");
 		//if (g_StreamConfig.bCascadeResult == 1) fptr = fopen("Analysis.txt", "a");
-		fprintf(analysisFile, "//////\nBuffer size (Samples)\n%d\nSampling Rate (Hz)\n%d\n///\n", u32TransferSizeSamples, g_CsAcqCfg.i64SampleRate);
+			return 1;
 		//fclose(fptr);
 
 
