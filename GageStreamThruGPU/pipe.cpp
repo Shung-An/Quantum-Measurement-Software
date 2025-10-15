@@ -29,6 +29,7 @@
 #include <vector>
 
 
+
 /*
  * Function: createAndConnectPipe
  * Description: Creates a named pipe with read/write access and waits for a client to connect.
@@ -73,6 +74,15 @@ extern "C" HANDLE createAndConnectPipe(const char* pipeName, DWORD bufferSize) {
     return hPipe;
 }
 
+
+static inline const char* winerr(DWORD e) {
+    switch (e) {
+    case ERROR_BROKEN_PIPE: return "ERROR_BROKEN_PIPE";
+    case ERROR_NO_DATA:     return "ERROR_NO_DATA";
+    default: return "";
+    }
+}
+
 /*
  * Function: CheckForRequest
  * Description: Checks if the client has sent any data to the server without blocking.
@@ -90,6 +100,57 @@ extern "C" bool CheckForRequest(HANDLE hPipe) {
     }
     return false; // No data available
 }
+// Non-blocking peek for a pending short request; returns true if it's 3 (abort).
+static bool HasAbortRequest(HANDLE hPipe) {
+    DWORD avail = 0;
+    if (!PeekNamedPipe(hPipe, nullptr, 0, nullptr, &avail, nullptr)) {
+        // Peek may fail briefly on disconnect; treat as no abort
+        return false;
+    }
+    if (avail < sizeof(short)) return false;
+
+    short req = 0;
+    DWORD br = 0;
+    if (!ReadFile(hPipe, &req, sizeof(req), &br, NULL) || br != sizeof(req)) {
+        // Could be peer closed or another transient; not a definitive abort
+        return false;
+    }
+    // We consumed one pending short request; only act on 3 (abort).
+    return (req == 3);
+}
+
+
+// Write with chunking + abort responsiveness.
+// Returns: 0 ok, 4 abort, 1 error.
+static int WriteAllWithAbort(HANDLE hPipe, const void* buf, DWORD totalBytes) {
+    const BYTE* p = static_cast<const BYTE*>(buf);
+    DWORD remaining = totalBytes;
+
+    // 32 KB chunks => good responsiveness without thrashing
+    const DWORD CHUNK = 32 * 1024;
+
+    while (remaining > 0) {
+        // Soft abort: client sent a '3'
+        if (HasAbortRequest(hPipe)) {
+            std::cerr << "[pipe] Abort request received mid-write\n";
+            return 4;
+        }
+
+        DWORD toWrite = remaining < CHUNK ? remaining : CHUNK;
+        DWORD sent = 0;
+        if (!WriteFile(hPipe, p, toWrite, &sent, NULL) || sent == 0) {
+            DWORD err = GetLastError();
+            std::cerr << "[pipe] WriteFile failed (sent=" << sent
+                << ", need=" << toWrite << ") err=" << err << " " << winerr(err) << "\n";
+            // Hard abort: client closed after sending 3, or just disconnected
+            if (err == ERROR_BROKEN_PIPE || err == ERROR_NO_DATA) return 4;
+            return 1;
+        }
+        p += sent;
+        remaining -= sent;
+    }
+    return 0;
+}
 
 /*
  * Function: handleClientRequests
@@ -97,77 +158,91 @@ extern "C" bool CheckForRequest(HANDLE hPipe) {
  *              the function may start or stop the experiment, or send data back to the client.
  * Parameters:
  *   - hPipe: A handle to the pipe (HANDLE) for communication.
- *   - data: Pointer to an array of short integers (short*) containing the raw signals data to send.
+ *   - dataA: Pointer to channel-A samples (short*), contiguous by segments.
+ *   - dataB: Pointer to channel-B samples (short*), contiguous by segments.
  *   - corrMatrix: Pointer to an array of doubles (double*) representing the correlation matrix to send.
  *   - segmentIndex: The index (int) of the data segment to send.
- *   - bytesToSend: The number of bytes to send (DWORD) from the `data` array, which means the number pf signal points sent.
+ *   - bytesToSend: The number of BYTES per-channel to send for this segment (DWORD).
  * Returns:
- *   - int: Status code indicating the result:
- *          - 0: No data to process.
- *          - 1: Error occurred (e.g., reading or writing data).
- *          - 2: Experiment start requested.
- *          - 3: Data sent successfully.
- *          - 4: Experiment stop requested.
- * Notes:
- *   - This function calls CheckForRequest to verify if the client has sent data.
- *   - The function uses `ReadFile` and `WriteFile` to read from and write to the pipe.
+ *   - 0: No data to process.
+ *   - 1: Error occurred.
+ *   - 2: Experiment start requested.
+ *   - 3: Data sent successfully.
+ *   - 4: Experiment stop requested.
  */
-extern "C" int handleClientRequests(HANDLE hPipe, short* data, short* dataB, double* corrMatrix, int segmentIndex, DWORD bytesToSend) {
+extern "C" int handleClientRequests(
+    HANDLE hPipe,
+    short* dataA,
+    short* dataB,
+    double* corrMatrix,
+    int     segmentIndex,
+    DWORD   bytesToSend
+) {
     if (!CheckForRequest(hPipe)) {
         return 0;  // No data to process
     }
 
-    // Read the client's request
-    short request;
-    DWORD bytesRead;
-    BOOL success = ReadFile(hPipe, &request, sizeof(request), &bytesRead, NULL);
-    if (!success || bytesRead != sizeof(request)) {
-        std::cerr << "Failed to read request from client.\n";
-        return 1;  // Error reading the request
+    // Read client's request (16-bit short)
+    short request = 0;
+    DWORD bytesRead = 0;
+    if (!ReadFile(hPipe, &request, sizeof(request), &bytesRead, NULL) || bytesRead != sizeof(request)) {
+        std::cerr << "Failed to read request from client. err=" << GetLastError() << "\n";
+        return 1;
     }
 
-	if (request == 1) { // The client requested to start the experiment
-        return 2; // The client requested to start the experiment
+    if (request == 1) {
+        return 2; // start experiment
     }
-	else if (request == 2) { // The client requested to send data including raw signals and correlation matrix
-        DWORD bytesWritten1;
-        DWORD bytesWritten2;
+    if (request == 3) {
+        return 4; // stop experiment
+    }
+    if (request != 2) {
+        return 1; // invalid request
+    }
 
-        // --- Calculate the starting position for this segment ---
-        int samplesPerSegment = bytesToSend / sizeof(short);
-        short* segmentStartA = data + segmentIndex * samplesPerSegment;
-        short* segmentStartB = dataB + segmentIndex * samplesPerSegment;
+    // --- request == 2: send interleaved A/B (ABAB...) + 512-byte matrix ---
+    if (bytesToSend == 0 || (bytesToSend % sizeof(short)) != 0) {
+        std::cerr << "bytesToSend invalid: " << bytesToSend << "\n";
+        return 1;
+    }
 
-        // --- Interleave A and B (ABABAB...) ---
-        std::vector<short> interleaved;
-        interleaved.resize(samplesPerSegment * 2);
+    const int samplesPerSegment = static_cast<int>(bytesToSend / sizeof(short));
+    short* segA = dataA + static_cast<size_t>(segmentIndex) * samplesPerSegment;
+    short* segB = dataB + static_cast<size_t>(segmentIndex) * samplesPerSegment;
 
-        for (int i = 0; i < samplesPerSegment; ++i) {
-            interleaved[2 * i] = segmentStartA[i];
-            interleaved[2 * i + 1] = segmentStartB[i];
+    const int CH_S = 16 * 1024; // samples per channel per chunk
+    std::vector<short> scratch; scratch.resize(static_cast<size_t>(CH_S) * 2);
+
+    int remainingSamples = samplesPerSegment;
+    short* pA = segA;
+    short* pB = segB;
+
+    while (remainingSamples > 0) {
+        if (HasAbortRequest(hPipe)) return 4;
+
+        int thisS = (remainingSamples < CH_S) ? remainingSamples : CH_S;
+
+        for (int i = 0; i < thisS; ++i) {
+            scratch[2 * i] = pA[i];
+            scratch[2 * i + 1] = pB[i];
         }
 
-        // --- Send the interleaved segment ---
-        DWORD interleavedBytes = static_cast<DWORD>(interleaved.size() * sizeof(short));
-        success = WriteFile(hPipe, interleaved.data(), interleavedBytes, &bytesWritten1, NULL);
-        if (!success || bytesWritten1 != interleavedBytes) {
-            std::cerr << "Failed to send interleaved data segment to client.\n";
-            return 1;
-		}  // Error sending the data segment
+        const DWORD bytesThisChunk = static_cast<DWORD>(thisS * 2 * sizeof(short));
+        int rc = WriteAllWithAbort(hPipe, scratch.data(), bytesThisChunk);
+        if (rc != 0) return rc; // 4=abort, 1=error
 
-        // Send the correlation matrix to the client
-        success = WriteFile(hPipe, corrMatrix, 512, &bytesWritten2, NULL);
-        if (!success || bytesWritten2 != 512) {
-            std::cerr << "Failed to send correlation matrix to client.\n";
-            return 1;  // Error sending the correlation matrix
-        }
+        pA += thisS;
+        pB += thisS;
+        remainingSamples -= thisS;
+    }
 
-        return 3;
+    // Matrix (512 bytes == 64 doubles)
+    {
+        const DWORD matrixBytes = 512;
+        int rc = WriteAllWithAbort(hPipe, corrMatrix, matrixBytes);
+        if (rc != 0) return rc;
     }
-	else if (request == 3) { // The client requested to abort the experiment
-        return 4; // The client requested to stop experiement
-    }
-    else {
-        return 1;  // Invalid request
-    }
+
+    FlushFileBuffers(hPipe);
+    return 3;
 }

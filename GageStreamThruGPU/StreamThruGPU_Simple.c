@@ -46,7 +46,7 @@
 #include <cublas_v2.h>
 
 
-
+#define WIN32_LEAN_AND_MEAN
 #define	MAX_CARDS_COUNT			10				// Max number of cards supported in a M/S Compuscope system 
 #define	SEGMENT_TAIL_ADJUST	64					// number of bytes at end of data which holds the timestamp values
 #define OUT_FILE	"Data"						// name of the output file 
@@ -729,7 +729,7 @@ int _tmain()
 	{
 		_ftprintf(stdout, _T("\nStream aborted on error.\n"));
 	}
-	else if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[1], 0))
+	else if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[1], 0))
 	{
 		_ftprintf(stdout, _T("\nStream aborted by user.\n"));
 	}
@@ -1339,7 +1339,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 		DeleteFile(szSaveFileName);
 		ExitThread(1);
-		ExitThread(2);
+
 	}
 
 	i32Status = CsStmAllocateBuffer(g_hSystem[0], nCardIndex, g_StreamConfig.u32BufferSizeBytes, &pBuffer12);
@@ -1353,7 +1353,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 		CloseHandle(hFile);
 		DeleteFile(szSaveFileName);
 		ExitThread(1);
-		ExitThread(2);
+
 	}
 
 	i32Status = CsStmAllocateBuffer(g_hSystem[1], nCardIndex, g_StreamConfig.u32BufferSizeBytes, &pBuffer21);
@@ -1367,7 +1367,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 		CloseHandle(hFile);
 		DeleteFile(szSaveFileName);
-		ExitThread(2);
+
 		ExitThread(1);
 	}
 
@@ -1383,7 +1383,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 		CloseHandle(hFile);
 		DeleteFile(szSaveFileName);
-		ExitThread(2);
+
 		ExitThread(1);
 	}
 
@@ -1544,7 +1544,6 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 			DeleteFile(szSaveFileName);
 			ExitThread(1);
-			ExitThread(2);
 		}
 
 		// Convert the transfer size to BYTEs or WORDs depending on the card.
@@ -1697,7 +1696,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 
 			// Check if user has aborted or an error has occured
-			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[1], 0))
+			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[1], 0))
 				break;
 			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[1], 0))
 				break;
@@ -1847,6 +1846,13 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 			if (NULL != pWorkBuffer1 && useIPC) {
 				int result = handleClientRequests(raw_signal_hPipe, pWorkBuffer1, pWorkBuffer2, h_odata, 0, 200, 0);  // 200 is the number of bytes to send, check request from client and send data
+				if (result == 4) {
+					SetEvent(g_hStreamAbort[0]);
+
+					SetEvent(g_hStreamAbort[1]);
+
+					bDone = TRUE;
+				}
 			}
 
 
@@ -1963,11 +1969,16 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 		}
 
 
+	
+
 		if (g_GpuConfig.bDoAnalysis)
 		{
 			QueryPerformanceCounter((LARGE_INTEGER*)&start_time);
 		}
 
+
+
+		// If the stream has completed successfully, there may be some valid data in the last buffer to be saved
 		if (bStreamCompletedSuccess && g_StreamConfig.bSaveToFile && NULL != pWorkBuffer1)
 		{
 			u32WriteSize = u32ActualLength1 * g_CsSysInfo.u32SampleSize;
@@ -2032,8 +2043,6 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 
 
-
-
 		if (bStreamCompletedSuccess)
 		{
 			dwRetCode = 0;
@@ -2051,7 +2060,9 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 		fclose(binFile);
 		fclose(analysisFile);
 
-		ExitThread(dwRetCode);
+		InjectEscToConsole(); // to notify the main thread that the streaming thread has completed
+
+		return dwRetCode;
 	}
 }
 
@@ -2087,6 +2098,29 @@ BOOL Prepare_Cleanup()
 	}
 
 	return bSuccess;
+}
+
+int InjectEscToConsole(void) {
+	HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+	if (hIn == INVALID_HANDLE_VALUE) return 0;
+
+	INPUT_RECORD rec[2] = { 0 };
+	DWORD written = 0;
+
+	// Key down (ESC)
+	rec[0].EventType = KEY_EVENT;
+	rec[0].Event.KeyEvent.bKeyDown = TRUE;
+	rec[0].Event.KeyEvent.wRepeatCount = 1;
+	rec[0].Event.KeyEvent.wVirtualKeyCode = VK_ESCAPE;
+	rec[0].Event.KeyEvent.wVirtualScanCode = MapVirtualKey(VK_ESCAPE, MAPVK_VK_TO_VSC);
+	rec[0].Event.KeyEvent.uChar.AsciiChar = 27; // ESC
+	rec[0].Event.KeyEvent.dwControlKeyState = 0;
+
+	// Key up (ESC)
+	rec[1] = rec[0];
+	rec[1].Event.KeyEvent.bKeyDown = FALSE;
+
+	return WriteConsoleInput(hIn, rec, 2, &written) && written == 2;
 }
 
 /***************************************************************************************************

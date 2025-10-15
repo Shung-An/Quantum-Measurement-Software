@@ -231,44 +231,71 @@ namespace Quantum_measurement_UI
         }
 
 
+
+
         /// <summary>
         /// Requests data from the server and receives it.
         /// </summary>
+        private static async Task<bool> ReadExactAsync(Stream s, byte[] buf, int total)
+        {
+            int off = 0;
+            while (off < total)
+            {
+                int n = await s.ReadAsync(buf, off, total - off).ConfigureAwait(false);
+                if (n == 0) return false; // peer closed
+                off += n;
+            }
+            return true;
+        }
+
         private async Task<bool> RequestAndReceiveDataAsync()
         {
             try
             {
-                // Send a request to the server
+                // 1) Request: short 2 (unchanged)
                 byte[] request = BitConverter.GetBytes((short)2);
+                await pipeClient.WriteAsync(request, 0, request.Length).ConfigureAwait(false);
+                await pipeClient.FlushAsync().ConfigureAwait(false);
 
-                await pipeClient.WriteAsync(request, 0, request.Length);
+                // 2) Sizes
+                int interleavedBytes = 2 * DataPoints * sizeof(short); // A+B interleaved
+                int matrixBytes = 64 * sizeof(double);            // 512
 
-                // Receive data from the server
-                byte[] dataBufferBytes = new byte[DataPoints * sizeof(short)];
-                byte[] corrBufferBytes = new byte[64 * sizeof(double)];
+                // 3) Buffers
+                byte[] interleaved = new byte[interleavedBytes];
+                byte[] mBytes = new byte[matrixBytes];
 
-                int bytesRead = await pipeClient.ReadAsync(dataBufferBytes, 0, dataBufferBytes.Length);
-                int corrBytesRead = await pipeClient.ReadAsync(corrBufferBytes, 0, corrBufferBytes.Length);
-
-                if (bytesRead == dataBufferBytes.Length && corrBytesRead == corrBufferBytes.Length)
+                // 4) Read interleaved
+                if (!await ReadExactAsync(pipeClient, interleaved, interleavedBytes).ConfigureAwait(false))
                 {
-                    Buffer.BlockCopy(dataBufferBytes, 0, dataBuffer, 0, dataBufferBytes.Length);
-                    Buffer.BlockCopy(corrBufferBytes, 0, corrMatrixBuffer, 0, corrBufferBytes.Length);
+                    AppendMessage("Error: Incomplete data received (interleaved).");
+                    return false;
+                }
 
-                    return true; // Data received successfully
-                }
-                else
+                // 5) Read matrix
+                if (!await ReadExactAsync(pipeClient, mBytes, matrixBytes).ConfigureAwait(false))
                 {
-                    AppendMessage("Error: Incomplete data received.");
-                    return false; // Data reception failed
+                    AppendMessage("Error: Incomplete data received (matrix).");
+                    return false;
                 }
+
+                // Ensure app buffers
+                if (dataBuffer == null || dataBuffer.Length < 2 * DataPoints)
+                    dataBuffer = new short[2 * DataPoints];
+                if (corrMatrixBuffer == null || corrMatrixBuffer.Length < 64)
+                    corrMatrixBuffer = new double[64];
+
+                // 6) Copy: interleaved bytes → short[] dataBuffer
+                Buffer.BlockCopy(interleaved, 0, dataBuffer, 0, interleavedBytes);
+
+                // 7) Copy matrix bytes → double[] corrMatrixBuffer
+                Buffer.BlockCopy(mBytes, 0, corrMatrixBuffer, 0, matrixBytes);
+
+                return true;
             }
             catch (Exception ex)
             {
                 AppendMessage($"Communication error: {ex.Message}");
-
-
-
                 if (!pipeClient.IsConnected)
                 {
                     pipeClient.Dispose();
@@ -276,7 +303,7 @@ namespace Quantum_measurement_UI
                     isPaused = true;
                 }
                 isPaused = true;
-                return false; // Communication failed
+                return false;
             }
         }
 
