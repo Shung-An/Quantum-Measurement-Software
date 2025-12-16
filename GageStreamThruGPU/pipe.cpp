@@ -223,8 +223,8 @@ extern "C" int handleClientRequests(
         int thisS = (remainingSamples < CH_S) ? remainingSamples : CH_S;
 
         for (int i = 0; i < thisS; ++i) {
-            scratch[2 * i] = pA[i];
-            scratch[2 * i + 1] = pB[i];
+            scratch[2 * i] = pA[2 * i];
+            scratch[2 * i + 1] = pB[2 * i + 1];
         }
 
         const DWORD bytesThisChunk = static_cast<DWORD>(thisS * 2 * sizeof(short));

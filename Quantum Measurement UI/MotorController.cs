@@ -6,7 +6,7 @@ namespace Quantum_measurement_UI
     public class MotorController
     {
         private CmdLib8742 cmdLib; // Library for communicating with the motor controller
-        private string deviceKey;  // Unique key identifying the motor controller device
+        public string deviceKey;  // Unique key identifying the motor controller device
 
         public MotorController()
         {
@@ -48,6 +48,17 @@ namespace Quantum_measurement_UI
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not get the current position.");
+            }
+            return status;
+        }
+
+        public bool StopMotion(string deviceKey, int motorNumber)
+        {
+
+            bool status = cmdLib.StopMotion(deviceKey, motorNumber);
+            if (!status)
+            {
+                Console.WriteLine("I/O Error: Could not stop the motor.");
             }
             return status;
         }
@@ -155,9 +166,20 @@ namespace Quantum_measurement_UI
                     // Special case: bypass "MOTION IN PROGRESS"
                     if (errorCode == "314" || errorCode == "214" || errorCode == "114")
                     {
-                        Console.WriteLine($"Non-fatal: {errorMsg} (skipped)");
+                        // Derive motor to stop from the error code (e.g. 114 → motor 1, 214 → motor 2, 314 → motor 3)
+                        int motorToStop=4; // default fallback
+
+                        if (errorCode.Length > 0 && char.IsDigit(errorCode[0]))
+                        {
+                            motorToStop = errorCode[0] - '0';  // first digit as motor index
+                        }
+
+                        Console.WriteLine($"Non-fatal: {errorMsg} (stopping motor {motorToStop} and skipping exception)");
+                        StopMotion(deviceKey, motorToStop);
+
                         return; // skip throwing
                     }
+
 
                     // Otherwise throw for all other errors
                     Console.WriteLine($"Device Error: {errorMsg}");

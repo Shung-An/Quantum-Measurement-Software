@@ -484,12 +484,7 @@ namespace Quantum_measurement_UI
             // Stop the delay stage program
             esp300Controller?.AbortProgram();
 
-            // Update UI status to Off
-            Dispatcher.Invoke(() => {
-                DelayStageStatusText.Text = "Off";
-                DelayStageStatusIndicator.Fill = Brushes.Red;
-            });
-
+     
             // Stop the delay stage position monitoring task
             if (delayStagePositionCancellationTokenSource != null)
             {

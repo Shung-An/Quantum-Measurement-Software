@@ -26,7 +26,7 @@ namespace QuantumSqueezingUI
         {
             if (!IsConnected)
             {
-                await pipeClient.ConnectAsync(5000); // 5 second timeout
+                await pipeClient.ConnectAsync(1000); // 5 second timeout
                 reader = new StreamReader(pipeClient, Encoding.UTF8);
                 writer = new StreamWriter(pipeClient, Encoding.UTF8) { AutoFlush = true };
             }

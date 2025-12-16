@@ -69,6 +69,96 @@ namespace Quantum_measurement_UI
             AppendMessage("Visualization resumed.");
         }
 
+
+        /// <summary>
+        /// Retrieves a list of all checked tags from the UI.
+        /// </summary>
+        private List<string> GetSelectedTags()
+        {
+            List<string> selectedTags = new List<string>();
+
+            // Iterate through all items in the StackPanel defined in XAML
+            foreach (var child in MetadataCheckBoxList.Children)
+            {
+                if (child is CheckBox checkBox && checkBox.IsChecked == true)
+                {
+                    selectedTags.Add(checkBox.Content.ToString());
+                }
+            }
+
+            return selectedTags;
+        }
+        private async Task RunMatlabAnalysisAsync(string resultFolderPath)
+        {
+            await Task.Run(() =>
+            {
+                try
+                {
+                    // 1. Get the path to your MATLAB scripts
+                    // Assuming your .m files are in a "MatlabScripts" folder inside your project
+                    // Or you can hardcode the path where 'cm_pipeline_all_in_one.m' lives.
+                    string scriptDirectory = @"C:\Program Files (x86)\Gage\CompuScope\CompuScope C SDK\Test";
+
+                    // 2. Construct the MATLAB command
+                    // - cd to the script location
+                    // - call the function with the result folder path
+                    // - exit (optional: remove 'exit' if you want MATLAB to stay open to check plots)
+                    string matlabCommand = $"cd('{scriptDirectory}'); " +
+                                           $"try, cm_pipeline_all_in_one('{resultFolderPath}'); catch e, disp(e.message); end; ";
+
+                    // 3. Configure the Process
+                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    {
+                        FileName = "matlab.exe",
+                        // -nosplash: Don't show the startup logo
+                        // -nodesktop: Don't open the full UI (optional, remove if you want to see figures)
+                        // -r: Run this command string
+                        Arguments = $"-nosplash -r \"{matlabCommand}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    // 4. Start MATLAB
+                    AppendMessage("Launching MATLAB for analysis...");
+                    using (Process matlab = Process.Start(startInfo))
+                    {
+                        // If you want C# to wait until MATLAB finishes (only if you include 'exit' in command)
+                        // matlab.WaitForExit(); 
+                    }
+
+                    AppendMessage("MATLAB analysis command sent.");
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => AppendMessage($"Failed to launch MATLAB: {ex.Message}"));
+                }
+            });
+        }
+
+        private void AnalyzeRunButton_Click()
+        {
+            // 1. Get the path
+            // Assuming 'resultsBaseDirectory' and 'experimentLogDirectory' are your global variables
+            string fullPath = System.IO.Path.Combine(resultsBaseDirectory, experimentLogDirectory);
+
+            // 2. Run Analysis
+            var analyzer = new QuantumAnalysisService();
+
+            // Run in background so UI doesn't freeze
+            Task.Run(() =>
+            {
+                var result = analyzer.RunPipeline(fullPath);
+
+                Dispatcher.Invoke(() =>
+                {
+                    if (result.Success)
+                        AppendMessage("Analysis Generated: check folder for PNGs.");
+                    else
+                        AppendMessage(result.Message);
+                });
+            });
+        }
+
         /// <summary>
         /// Event handler for the Move Relative button click.
         /// </summary>

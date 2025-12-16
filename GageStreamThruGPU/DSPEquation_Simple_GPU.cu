@@ -53,48 +53,57 @@ void writeResultsToFile(FILE* AnalysisFile, FILE* binFile, int u32LoopCount, dou
 	}
 }
 
+
+// One segment per block.
+// dataA: board1, ABAB... (A,B,A,B,...)
+// dataB: board2, ABAB... (A,B,A,B,...)
 __global__ void demodulationCrossCorrelation(
-	short* dataA,
-	short* dataB,
-	__int64 numElements,               // total samples across BOTH channels OR per-channel (see flag)
-	double* aggregatedCorrMatrix,
-	const int sharedSegmentSize,               // count of doubles (>= 4*W); optional
-	const int totalThreads,                    // W*W (unused if we stride)
-	const int W,                               // demodulationWindowSize
-	const int corrMatrixSize,                  // should be W*W
-	const int segmentSize                     // expected 2*W per channel
+	const short* __restrict__ dataA,
+	const short* __restrict__ dataB,
+	const long long numElements,              // total *samples* per board (ABAB)
+	double* __restrict__ aggregatedCorrMatrix,
+	const int sharedSegmentSize,              // unused except for sanity; segmentSize <= sharedSegmentSize
+	const int totalThreads,                   // unused
+	const int demodulationWindowSize,                              // demodulationWindowSize
+	const int corrMatrixSize,                 // W * W
+	const int segmentSize                     // in FRAMES, usually 2*W
 )
 {
-	extern __shared__ double shared[];  // dynamic SMEM
-	double* sA = shared;                // [segmentSize] for A
-	double* sB = sA + segmentSize;      // [segmentSize] for B
+	int index = blockDim.x * blockIdx.x + threadIdx.x;
 
-	const int s = blockIdx.x;           // segment index
-	const long long perChan = numElements >> 1;
-	const long long base = 1LL * s * segmentSize;
-	if (base >= perChan) return;
 
-	// load segment into shared memory
-	for (int i = threadIdx.x; i < segmentSize; i += blockDim.x) {
-		if (base + i < perChan) {
-			sA[i] = (double)dataA[base + i];
-			sB[i] = (double)dataB[base + i];
+	// Declare shared memory
+	extern __shared__ double sharedSegment[];
+
+	// Only the first 32 threads in the block load data into shared memory
+	if (threadIdx.x < sharedSegmentSize) {
+		if (threadIdx.x % 2 == 0) {
+			sharedSegment[threadIdx.x] = static_cast<double>(dataA[blockIdx.x * sharedSegmentSize + threadIdx.x]);
+		}
+		else {
+			sharedSegment[threadIdx.x] = static_cast<double>(dataB[blockIdx.x * sharedSegmentSize + threadIdx.x]);
 		}
 	}
+
 	__syncthreads();
 
-	// compute correlation tile (W×W)
-	for (int k = threadIdx.x; k < W * W; k += blockDim.x) {
-		int row = k / W;
-		int col = k % W;
+	if (index < totalThreads) {
+		int row = threadIdx.x % corrMatrixSize / demodulationWindowSize;
+		int col = threadIdx.x % demodulationWindowSize;
 
-		if (row + W >= segmentSize || col + W >= segmentSize)
-			continue;
+		int segmentStart = threadIdx.x / corrMatrixSize * segmentSize; // Determine the starting index of the segment in shared memory
 
-		double corr = (sA[row] - sA[row + W]) * (sB[col] - sB[col + W]);
-		aggregatedCorrMatrix[s * corrMatrixSize + row * W + col] = corr;
+		double value1 = sharedSegment[segmentStart + row * 2];
+		double value2 = sharedSegment[segmentStart + (row + demodulationWindowSize) * 2];
+		double value3 = sharedSegment[segmentStart + col * 2 + 1];
+		double value4 = sharedSegment[segmentStart + (col + demodulationWindowSize) * 2 + 1];
+
+		double corrValue = (value1 - value2) * (value3 - value4);
+
+		aggregatedCorrMatrix[index] = corrValue; // Correlation matrix, one column is a single correlation matrix, column-major order
 	}
 }
+
 
 __global__ void demodulationAutoCorrelation(short* data,
 	short* dataB,

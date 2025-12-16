@@ -245,7 +245,7 @@
                                     <TextBox Name="TimeZeroPositionInput"
              Width="100"
              VerticalAlignment="Center"
-             Text="25.28"
+             Text="24.3"
              KeyDown="TimeZeroPositionInput_KeyDown"
              Margin="0,0,0,8" TextChanged="TextBox_TextChanged"/>
 
@@ -354,12 +354,38 @@
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="5">
                                         <TextBlock Text="Filename:" Width="70" VerticalAlignment="Center"/>
-                                        <TextBox Name="FileNameInput" Width="80" Text="test.txt"/>
+                                        <TextBox Name="FileNameInput" Width="100" Text="test.txt"/>
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="5">
                                         <TextBlock Text="Description:" Width="70" VerticalAlignment="Center"/>
-                                        <TextBox Name="DescriptionInput" Width="80" Text="This is testing logging"/>
+                                        <TextBox Name="DescriptionInput" Width="150" Text="Testing run"/>
                                     </StackPanel>
+
+                                    <Label Content="Select Sample(s):" FontWeight="Bold" Margin="0,5,0,0"/>
+                                    <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="3" Height="80" Margin="5">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel x:Name="SampleCheckBoxList" Margin="5">
+                                                <CheckBox Content="Sm0.7Er0.3FeO3 (50 um)" Margin="0,2"/>
+                                                <CheckBox Content="Vacuum" Margin="0,2"/>
+                                                <CheckBox Content="ErFeO3" Margin="0,2"/>
+                                                <CheckBox Content="Calibration Source" Margin="0,2"/>
+                                                <CheckBox Content="Unknown Sample" Margin="0,2"/>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Border>
+
+                                    <Label Content="Experiment Tags:" FontWeight="Bold" Margin="0,5,0,0"/>
+                                    <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="3" Height="80" Margin="5">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel x:Name="MetadataCheckBoxList" Margin="5">
+                                                <CheckBox Content="Squeezing" Margin="0,2"/>
+                                                <CheckBox Content="Anti-Squeezing" Margin="0,2"/>
+                                                <CheckBox Content="Shot Noise" Margin="0,2"/>
+                                                <CheckBox Content="Dark Noise" Margin="0,2"/>
+                                                <CheckBox Content="Alignment" Margin="0,2"/>
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Border>
                                 </StackPanel>
                             </GroupBox>
 
@@ -748,7 +774,54 @@
                          FontSize="12" />
                 </Grid>
             </TabItem>-->
+            <TabItem Header="Experiment History">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
 
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="Search:" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                        <TextBox Name="HistorySearchBox" Width="200" TextChanged="HistorySearchBox_TextChanged"/>
+
+                        <Button Content="Refresh List" Width="100" Margin="10,0,0,0" Click="RefreshHistory_Click"/>
+                        <Button Content="Open Folder" Width="100" Margin="10,0,0,0" Click="OpenSelectedFolder_Click"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="HistoryGrid" AutoGenerateColumns="False" IsReadOnly="True"  Margin="0,30,0,0"  >
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Date" Binding="{Binding Timestamp}" Width="140"/>
+                            <DataGridTextColumn Header="Sample" Binding="{Binding Sample}" Width="120"/>
+                            <DataGridTextColumn Header="Duration" Binding="{Binding Duration}" Width="80"/>
+
+                            <DataGridTextColumn Header="Shot Noise (μrad²)" Binding="{Binding ShotNoiseResult}" Width="110" FontWeight="Bold">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#007ACC"/>
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTextColumn Header="Power (mW)" Binding="{Binding TotalPower}" Width="80">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+
+                            <DataGridTextColumn Header="Range (mm)" Binding="{Binding ScanRange}" Width="80"/>
+
+                            <DataGridTextColumn Header="Sensitivity" Binding="{Binding Sensitivity}" Width="90" Foreground="Gray"/>
+
+                            <DataGridTextColumn Header="Tags" Binding="{Binding Tags}" Width="*"/>
+
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
             <!-- Additional tabs can be added here -->
         </TabControl>
 
