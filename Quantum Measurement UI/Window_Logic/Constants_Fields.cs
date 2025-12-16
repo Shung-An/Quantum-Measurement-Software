@@ -239,6 +239,47 @@ namespace Quantum_measurement_UI
         }
     }
 
+    public class ExperimentRecord
+    {
+        public string Timestamp { get; set; }
+        public string Duration {  get; set; }
+        public string Sample { get; set; }
+        public string Tags { get; set; } // Comma separated string for display
+        public string Description { get; set; }
+        public string FullPath { get; set; } // Hidden path for opening the folder
+
+        // Optional: Add status (e.g., "Success", "Failed")
+
+        // --- NEW PHYSICS FIELDS ---
+        public string ShotNoiseResult { get; set; } // e.g., "5.45"
+        public string TotalPower { get; set; }      // e.g., "0.41" (P1+P2)
+        public string Sensitivity { get; set; }     // e.g., "1.79E-7"
+        public string ScanRange { get; set; }       // e.g., "5.5"
+    }
+
+    public class ExperimentMetadata
+    {
+        // --- Context ---
+        public string Timestamp { get; set; }
+        public string ExperimentName { get; set; }
+        public string UserNote { get; set; } // From your "Tag" text box
+
+        // --- Configuration (From Constants_Fields.cs) ---
+        public bool EnableFFT { get; set; }
+        public int SelectedDAQChannel { get; set; }
+        public bool UseDiagonalMode { get; set; }
+        public int SelectedDiagonalIndex { get; set; }
+        public int SelectedRow { get; set; }
+        public int SelectedColumn { get; set; }
+
+        // --- Hardware State ---
+        public string ExternalClockStatus { get; set; } // "On" or "Off"
+        public double InitialMotorPosition { get; set; } // Example
+
+        // --- Software Version ---
+        public string SoftwareVersion { get; set; } = "1.0.0";
+    }
+
     public class Motor3_Balancer // Object to balance Motor 3
     {
         private bool dir; // direction of the balance (true: up, false: down)

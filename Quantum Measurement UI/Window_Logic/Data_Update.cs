@@ -19,10 +19,15 @@ namespace Quantum_measurement_UI
         /// <summary>
         /// Initializes the named pipe client for data communication.
         /// </summary>
-        private void InitializePipeClient()
+        private async Task AsyncInitializePipeClient()
         {
             pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
-            pipeClient.Connect();
+
+            // CHANGE: Connect() -> await ConnectAsync()
+            // This allows the UI to stay responsive while waiting
+            AppendMessage("Waiting for GageStreamThruGPU to initialize...");
+            await pipeClient.ConnectAsync(10000); // 10 second timeout
+
             AppendMessage("Data Pipe Connected to server.");
         }
 

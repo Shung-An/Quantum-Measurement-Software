@@ -38,15 +38,19 @@ namespace Quantum_measurement_UI
         /// <summary>
         /// Initializes the experiment log file and copies the streaming configuration from StreamThruGPU.ini.
         /// </summary>
-        private void InitializeExperimentLog()
+        private async Task AsyncInitializeExperimentLog()
         {
+            // 1. Start with the standard timestamp
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string resultDirectory = Path.Combine(resultsBaseDirectory, timestamp);
 
+            // 4. Create the directory with this descriptive name
+            string resultDirectory = Path.Combine(resultsBaseDirectory, timestamp);
             Directory.CreateDirectory(resultDirectory);
+
+            // Update the global variable so other functions know where to save
             experimentLogDirectory = timestamp;
 
-            // Create each log file
+            // --- (The rest of your existing logic stays the same) ---
             experimentLogFilePath = Path.Combine(resultDirectory, "exp.log");
             motorMetricLogFilePath = Path.Combine(resultDirectory, "motor_metric.log");
             sensitivityLogFilePath = Path.Combine(resultDirectory, "sensitivity.log");
@@ -57,28 +61,83 @@ namespace Quantum_measurement_UI
             sensitivityLogWriter = new StreamWriter(sensitivityLogFilePath) { AutoFlush = true };
             droppedWindowLogWriter = new StreamWriter(droppedWindowLogFilePath) { AutoFlush = true };
 
-            // Log header for experiment log
             experimentLogWriter.WriteLine($"Experiment Log: {experimentLogFilePath}\n");
 
-            // Copy configuration file into the experiment log
-            string configFilePath = IniFilePath;
-            experimentLogWriter.WriteLine("The streaming configuration is as follows:\n");
-            if (File.Exists(configFilePath))
-            {
-                foreach (var line in File.ReadLines(configFilePath))
-                {
-                    experimentLogWriter.WriteLine(line);
-                }
-            }
-            experimentLogWriter.WriteLine("\n--- Experiment Start ---\n");
-
-            // Save file description
-            string filename = string.IsNullOrWhiteSpace(FileNameInput?.Text) ? "Measurement" : FileNameInput.Text;
-            string description = string.IsNullOrWhiteSpace(DescriptionInput?.Text) ? "Conditions" : DescriptionInput.Text;
-            string additionalLogPath = Path.Combine(resultDirectory, "file_description.log");
-            File.WriteAllText(additionalLogPath, $"Filename: {filename}\nDescription: {description}\n");
         }
 
+
+
+        /// <summary>
+        /// Renames the experiment folder based on UI Metadata.
+        /// </summary>
+        private void RenameExperimentFolder()
+        {
+            try
+            {
+                // 1. Get the current (old) folder path
+                string oldFolderPath = Path.Combine(resultsBaseDirectory, experimentLogDirectory);
+                if (!Directory.Exists(oldFolderPath)) return;
+
+                // 2. Prepare the String Parts
+
+                // --- Samples ---
+                var samples = GetSelectedSamples();
+                // Safety check: ensure list isn't empty, default to "Unknown"
+                string sampleStr = samples.Count > 0 ? samples[0] : "Unknown";
+                if (samples.Count > 1) sampleStr += "_mix";
+
+                // --- Tags ---
+                var tags = GetSelectedTags();
+                string tagStr = tags.Count > 0 ? tags[0] : "";
+                if (tags.Count > 1) tagStr += "_etc";
+
+                // 3. Sanitize inputs (Prevent illegal characters like / \ : *)
+                string cleanSample = SanitizePath(sampleStr);
+                string cleanTag = SanitizePath(tagStr);
+
+                // Check if we actually have anything to append. 
+                // If both are empty/default, we might not want to rename (optional logic).
+                if (string.IsNullOrWhiteSpace(cleanSample) && string.IsNullOrWhiteSpace(cleanTag)) return;
+
+                // 4. Create New Name: Timestamp_Sample_Tag
+                // Get the timestamp from the existing folder name
+                string timestamp = new DirectoryInfo(oldFolderPath).Name;
+
+                // Construct the new name using the CLEAN variables
+                string newFolderName = $"{timestamp}_{cleanSample}_{cleanTag}";
+
+                // Remove trailing underscore if tag was empty (e.g., "Time_Sample_")
+                newFolderName = newFolderName.Trim('_');
+
+                string newFolderPath = Path.Combine(resultsBaseDirectory, newFolderName);
+
+                // 5. Rename (Move)
+                Directory.Move(oldFolderPath, newFolderPath);
+
+                // 6. Update the global variable so future logs go to the right place
+                experimentLogDirectory = newFolderName;
+                AppendMessage($"Folder renamed to: {newFolderName}");
+            }
+            catch (Exception ex)
+            {
+                AppendMessage($"Note: Could not rename folder (files might be open): {ex.Message}");
+            }
+        }
+
+
+        // Helper to clean bad characters
+        private string SanitizePath(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "";
+
+            foreach (char c in Path.GetInvalidFileNameChars())
+            {
+                // FIX: Add .ToString() so both arguments are strings
+                name = name.Replace(c.ToString(), "");
+            }
+
+            return name.Replace(" ", "");
+        }
 
 
         private void StartESPUpdate_Click(object sender, RoutedEventArgs e)
@@ -901,8 +960,23 @@ namespace Quantum_measurement_UI
 
                         Dispatcher.Invoke(() =>
                         {
+                            try
+                            {
+                                UpdateAIMonitor();        // 🔥 Update AI Power Checker functions
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine("UI update error (UpdateAIMonitor): " + ex);
+                            }
+                            try
+                            {
                             UpdateDAQChart();         // 🔥 Existing: Update 6-channel DAQ chart
-                            UpdateAIMonitor();        // 🔥 Update AI Power Checker functions
+
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine("UI update error (UpdateDAQChart): " + ex);
+                            }
                         });
 
                         motorVsAi5Counter++;
@@ -910,7 +984,14 @@ namespace Quantum_measurement_UI
                         {
                             Dispatcher.Invoke(() =>
                             {
-                                UpdateMotorVsAI5(); // 🔥 Existing: Update Motor vs AI5 slower
+                                try
+                                {
+                                    UpdateMotorVsAI5(); // 🔥 Existing: Update Motor vs AI5 slower
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("UI update error (MotorVsAI5): " + ex);
+                                }
                             });
                             motorVsAi5Counter = 0;
                         }
@@ -924,7 +1005,7 @@ namespace Quantum_measurement_UI
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Auto read error: " + ex.Message);
+                    Console.WriteLine("Auto read error: " + ex);
                 }
             }
         }

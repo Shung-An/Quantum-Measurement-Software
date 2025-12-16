@@ -45,7 +45,7 @@
 #include <io.h>
 #include <cublas_v2.h>
 
-
+#define MAX_SYS 2								// Max number of systems supported in this sample code
 #define WIN32_LEAN_AND_MEAN
 #define	MAX_CARDS_COUNT			10				// Max number of cards supported in a M/S Compuscope system 
 #define	SEGMENT_TAIL_ADJUST	64					// number of bytes at end of data which holds the timestamp values
@@ -58,7 +58,7 @@
 
 
 HANDLE raw_signal_hPipe = NULL;					// Handle to the pipe for all communication between software process and gagestreamthruGPU process
-char experimentLogDirectory[256] = "Z:\\Quantum Squeezing Project\\DataFiles\\"; // 256 is an example size, adjust if needed
+char experimentLogDirectory[256] = "D:\\Quantum Squeezing Project\\DataFiles\\"; // 256 is an example size, adjust if needed
 
 
 // User configuration variables
@@ -175,7 +175,7 @@ extern "C" {
 	extern void initializeArrayWithCuda(double* dev_array, int size, double value);
 	extern int CPU_Equation_PlusOne(void* buffer, __int64 length, double* gpu_average_matrix);
 	extern HANDLE createAndConnectPipe(const char* pipeName, DWORD bufferSize);
-	extern int handleClientRequests(HANDLE hPipe, short* data, short* dataB, double* corrMatrix, int segmentIndex, DWORD bytesToSend, int choice);
+	extern int handleClientRequests(HANDLE hPipe, short* dataA, short* dataB, double* corrMatrix, int segmentIndex, DWORD bytesToSend, int choice);
 	extern bool CheckForRequest(HANDLE hPipe);
 
 #ifdef __cplusplus
@@ -208,10 +208,10 @@ void VerifyData(void* buffer, int64 size, unsigned int sample_size);
 HANDLE						g_hThread[2] = { 0 ,0 };
 LONGLONG					g_llCardTotalData[MAX_CARDS_COUNT] = { 0 };
 LONGLONG					g_llTotalSamplesConfig = 0;
-HANDLE						g_hStreamStarted[2] = { 0,0 };
-HANDLE						g_hStreamAbort[2] = { 0,0 };
-HANDLE						g_hStreamError[2] = { 0,0 };
-HANDLE						g_hThreadReadyForStream[2] = { 0,0 };
+HANDLE						g_hStreamStarted[MAX_SYS];
+HANDLE						g_hStreamAbort[MAX_SYS];
+HANDLE						g_hStreamError[MAX_SYS];
+HANDLE						g_hThreadReadyForStream[MAX_SYS];
 CSHANDLE					g_hSystem[2] = { 0,0 };
 CSSYSTEMINFO				g_CsSysInfo = { 0 };
 CSACQUISITIONCONFIG			g_CsAcqCfg = { 0 };
@@ -220,6 +220,61 @@ CSGPUCONFIG					g_GpuConfig = { 0 };	// GPU configuration
 EXPCONFIG					g_ExpConfig;	// Experiment configuration
 CS_STRUCT_DATAFORMAT_INFO	g_DataFormatInfo = { 0 };
 double						diff_time[MAX_CARDS_COUNT] = { 0. };
+HANDLE   g_hStreamRestart = NULL;   // signaled when we want an automatic restart
+
+
+typedef struct {
+	int  systemIdx;     // 0 or 1
+	CSHANDLE hSystem;   // g_hSystem[systemIdx]
+	uInt16 cardIndex;   // always 1 for single-card boards
+} ThreadArg;
+
+static void RestartMyself(void)
+{
+	TCHAR modulePath[MAX_PATH];
+
+	// Get full path to current .exe
+	DWORD len = GetModuleFileName(NULL, modulePath, MAX_PATH);
+	if (len == 0 || len == MAX_PATH) {
+		_ftprintf(stderr, _T("RestartMyself: GetModuleFileName failed (err=%lu)\n"),
+			GetLastError());
+		return; // fall back: just continue / exit normally
+	}
+
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+	ZeroMemory(&si, sizeof(si));
+	ZeroMemory(&pi, sizeof(pi));
+	si.cb = sizeof(si);
+
+	// Optional: small delay to avoid crazy fast restart loop
+	Sleep(2000);
+
+	BOOL ok = CreateProcess(
+		modulePath,   // application name = same EXE
+		NULL,         // command line (reuse default)
+		NULL, NULL,   // process / thread security
+		FALSE,
+		0,
+		NULL,
+		NULL,
+		&si,
+		&pi
+	);
+
+	if (!ok) {
+		_ftprintf(stderr, _T("RestartMyself: CreateProcess failed (err=%lu)\n"),
+			GetLastError());
+		return;
+	}
+
+	// We don't need the handles
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+
+	// Kill current process so only the new one lives
+	ExitProcess(0);
+}
 
 int _tmain()
 {
@@ -246,6 +301,8 @@ int _tmain()
 	cudaError_t					cudaStatus = cudaSuccess;
 	int64						i64TickFrequency = 0;
 	int							display_result = 1;
+	int							nSystems = 0;
+
 
 
 	clock_t pre_start_time, pre_current_time;
@@ -316,12 +373,22 @@ int _tmain()
 		DisplayErrorString(i32Status);
 		return (-1);
 	}
-
+	nSystems++;
 	i32Status = CsGetSystem(&g_hSystem[1], 0, 0, 0, 0);
 	if (CS_FAILED(i32Status))
 	{
 		DisplayErrorString(i32Status);
 		return (-1);
+	}
+
+	nSystems++;
+
+	ThreadArg* args = (ThreadArg*)calloc(nSystems, sizeof * args);  // persists
+
+	for (int i = 0; i < nSystems; ++i) {
+		args[i].systemIdx = i;
+		args[i].hSystem = g_hSystem[i];
+		args[i].cardIndex = 1;
 	}
 
 	// Get System information. The u32Size field must be filled in
@@ -534,21 +601,7 @@ int _tmain()
 
 
 	// Create events for stream data acquisition
-	g_hStreamStarted[0] = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hStreamAbort[0] = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hStreamError[0] = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hThreadReadyForStream[0] = CreateEvent(NULL, FALSE, FALSE, NULL);
-	g_hStreamStarted[1] = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hStreamAbort[1] = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hStreamError[1] = CreateEvent(NULL, TRUE, FALSE, NULL);
-	g_hThreadReadyForStream[1] = CreateEvent(NULL, FALSE, FALSE, NULL);
-	if (NULL == g_hStreamStarted[0] || NULL == g_hStreamAbort[0] || NULL == g_hStreamError[0] || NULL == g_hThreadReadyForStream[0] || NULL == g_hStreamStarted[1] || NULL == g_hStreamAbort[1] || NULL == g_hStreamError[1] || NULL == g_hThreadReadyForStream[1])
-	{
-		_ftprintf(stderr, _T("\nUnable to create events for synchronization.\n"));
-		CsFreeSystem(g_hSystem[0]);
-		CsFreeSystem(g_hSystem[1]);
-		return (-1);
-	}
+	InitEvents(nSystems);
 
 	// Commit the values to the driver.  This is where the values get sent to the
 	// hardware.  Any invalid parameters will be caught here and an error returned.
@@ -597,9 +650,9 @@ int _tmain()
 	//  Create threads for Stream. In M/S system, we have to create one thread per card
 	//for (n = 1, i = 0; n <= CsSysInfo.u32BoardCount; n++, i++)
 	// 2 cards in the same CardStreamThread 
-	for (n = 1, i = 0; n <= 1; n++, i++)
+	for (int i = 0; i < nSystems; ++i)
 	{
-		g_hThread[i] = (HANDLE)CreateThread(NULL, 0, CardStreamThread, &n, 0, &dwThreadId);
+		g_hThread[i] = (HANDLE)CreateThread(NULL, 0, CardStreamThread, &args[i], 0, &dwThreadId);
 		if ((HANDLE)(INT_PTR)-1 == g_hThread[i])
 		{
 			// Fail to create the streaming thread for the n card.
@@ -626,18 +679,20 @@ int _tmain()
 
 	// Start the streaming data acquisition
 	printf("\nStart streaming. Press ESC to abort\n\n");
-	i32Status = CsDo(g_hSystem[0], ACTION_START);
-	if (CS_FAILED(i32Status))
-	{
-		DisplayErrorString(i32Status);
-		CsFreeSystem(g_hSystem[0]);
-		return (-1);
-	}
+
 	i32Status = CsDo(g_hSystem[1], ACTION_START);
 	if (CS_FAILED(i32Status))
 	{
 		DisplayErrorString(i32Status);
 		CsFreeSystem(g_hSystem[1]);
+		return (-1);
+	}
+
+	i32Status = CsDo(g_hSystem[0], ACTION_START);
+	if (CS_FAILED(i32Status))
+	{
+		DisplayErrorString(i32Status);
+		CsFreeSystem(g_hSystem[0]);
 		return (-1);
 	}
 
@@ -663,8 +718,7 @@ int _tmain()
 			switch (toupper(_getch()))
 			{
 			case 27:			// ESC key -> abort
-				SetEvent(g_hStreamAbort[0]);
-				SetEvent(g_hStreamAbort[1]);
+				SetEvent(g_hStreamAbort[i]);
 				bDone = TRUE;
 				break;
 			case 'F':			// F key -> force trigger
@@ -679,8 +733,7 @@ int _tmain()
 		// Quit if elapsed time greater than our setting. 
 		if (u32TickNow - u32TickStart >= g_StreamConfig.u32TimeCounter)
 		{
-			SetEvent(g_hStreamAbort[0]);
-			SetEvent(g_hStreamAbort[1]);
+			SetEvent(g_hStreamAbort[i]);
 			bDone = TRUE;
 		}
 
@@ -725,11 +778,11 @@ int _tmain()
 	}
 
 	// Check some events to see if there was any errors
-	if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[1], 0))
+	if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[i], 0) )
 	{
 		_ftprintf(stdout, _T("\nStream aborted on error.\n"));
 	}
-	else if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[1], 0))
+	else if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[i], 0) )
 	{
 		_ftprintf(stdout, _T("\nStream aborted by user.\n"));
 	}
@@ -773,7 +826,26 @@ int _tmain()
 		UpdateProgress(u32TickNow - u32TickStart, llSystemTotalData * g_CsSysInfo.u32SampleSize, AnalysisFile);
 	}
 
+	free(args);
 
+	// If calibration (or some worker) asked for an automatic restart,
+	// we only do it *after* the normal cleanup path has finished.
+	if (g_hStreamRestart &&
+		WaitForSingleObject(g_hStreamRestart, 0) == WAIT_OBJECT_0)
+	{
+		printf("\n[MAIN] Restart flag detected. Restarting program...\n");
+
+		// Optional: clear it so child process / future runs don't see it
+		ResetEvent(g_hStreamRestart);
+
+		// Option A: self-relaunch via RestartMyself()
+		RestartMyself();  // will only return if it failed
+
+		// If RestartMyself fails for some reason, fall back to exit with error
+		return 1;
+	}
+
+	// normal exit
 	return 0;
 }
 
@@ -815,6 +887,7 @@ BOOL isChannelValid(uInt32 u32ChannelIndex, uInt32 u32mode, uInt16 u16cardIndex,
 
 	return (u32ChannelIndex >= min && u32ChannelIndex <= max);
 }
+
 
 /***************************************************************************************************
 ****************************************************************************************************/
@@ -875,6 +948,10 @@ int32 InitializeStream(CSHANDLE hSystem)
 
 	// Sets the Acquisition values down the driver, without any validation, 
 	// for the Commit step which will validate system configuration.
+
+	if (hSystem == 131083) CsAcqCfg.i64TriggerDelay = 2080;
+	if (hSystem == 131084) CsAcqCfg.i64TriggerDelay = 1024;
+
 	i32Status = CsSet(hSystem, CS_ACQUISITION, &CsAcqCfg);
 	if (CS_FAILED(i32Status))
 	{
@@ -1148,10 +1225,13 @@ cudaError_t InitializeCudaDevice(int32 nDevice, int32* i32MaxBlocks, int32* i32M
 /***************************************************************************************************
 ****************************************************************************************************/
 
-DWORD WINAPI CardStreamThread(void* CardIndex)
+DWORD WINAPI CardStreamThread(LPVOID lpParam)
 {
-	uInt16 nCardIndex = *((uInt16*)CardIndex);
-
+	ThreadArg* arg = (ThreadArg*)lpParam;   // lpParam is already the pointer you passed
+	if (!arg) return 0;
+	const int    i = arg->systemIdx;        // 0 or 1
+	CSHANDLE     h = arg->hSystem;
+	const uInt16 nCardIndex = arg->cardIndex; // usually 1
 
 
 	void* pBuffer11 = NULL; // Pointer to the buffer for card 1
@@ -1211,6 +1291,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 	DWORD				dwRetCode = 0;
 	DWORD				dwBytesSave = 0;
 	HANDLE				hFile = NULL;
+	HANDLE				hFile2= NULL;
 	BOOL				bWriteSuccess = TRUE;
 	DWORD				dwFileFlag = g_StreamConfig.bFileFlagNoBuffering ? FILE_FLAG_NO_BUFFERING : 0;
 	TCHAR				szSaveFileName[MAX_PATH];
@@ -1244,6 +1325,11 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 	uInt32				totalSegNum;														// Total number of segments in the data transfer
 	int					corrMatrixSize; 													// Size of the correlation matrix
 	int					segmentSize;														// Size of one segment in the input data 
+
+	int g_delta_samples = 0;
+	BOOL g_cal_valid = FALSE;// Size of one segment in the input data 
+	int gpu_skip0_samples = 0;
+	int gpu_skip1_samples = 0;
 
 	TCHAR msg[256] = { 0 };
 
@@ -1295,10 +1381,16 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 	if (g_StreamConfig.bSaveToFile)
 	{
-		//If there is an header, the file exist and we must keep the file and don't overwrite it
-		hFile = CreateFile(szSaveFileName, GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_NEW, dwFileFlag, NULL);
+		DWORD disp = CREATE_ALWAYS;
+		DWORD share = FILE_SHARE_READ | FILE_SHARE_WRITE; // safer with AV/indexers
+		hFile = CreateFile(_T("Data_1.dat"), GENERIC_READ | GENERIC_WRITE, share, NULL, disp, dwFileFlag, NULL);
+		hFile2 = CreateFile(_T("Data_2.dat"), GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_NEW, dwFileFlag, NULL);
 		if (INVALID_HANDLE_VALUE == hFile)
 		{
+			DWORD e = GetLastError();
+			TCHAR cwd[MAX_PATH];
+			GetCurrentDirectory(MAX_PATH, cwd);
+			_ftprintf(stderr, _T("\nCreateFile failed for Data_1.dat. GetLastError=%lu (cwd=%s)\n"), e, cwd);
 			_ftprintf(stderr, _T("\nUnable to create data file.\n"));
 			ExitThread(1);
 		}
@@ -1506,33 +1598,21 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 		}
 
 
-
-
 		// So far so good ...
 		// Let the main thread know that this thread is ready for stream
-		SetEvent(g_hThreadReadyForStream[0]);
-		SetEvent(g_hThreadReadyForStream[1]);
+		SetEvent(g_hThreadReadyForStream[i]);
 
 
 		// Wait for the start acquisition event from the main thread
-		WaitEvents[0] = g_hStreamStarted[0];
-		WaitEvents[1] = g_hStreamStarted[1];
-		WaitEvents[2] = g_hStreamAbort[0];
-		WaitEvents[3] = g_hStreamAbort[1];
-
-
-
-
-
-		dwWaitStatus = WaitForMultipleObjects(4, WaitEvents, FALSE, INFINITE);
-
-		if ((WAIT_OBJECT_0 + 1) == dwWaitStatus)
+		HANDLE ev[2] = { g_hStreamStarted[i], g_hStreamAbort[i] };
+		DWORD dw = WaitForMultipleObjects(2, ev, FALSE, INFINITE);
+		if (dw == WAIT_OBJECT_0 + 1)
 		{
 			// Aborted from user or error
 			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer11);
 			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer12);
 			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer21);
-			CsStmFreeBuffer(g_hSystem[0], nCardIndex, pBuffer22);
+			CsStmFreeBuffer(g_hSystem[1], nCardIndex, pBuffer22);
 			CloseHandle(hFile);
 			if (g_GpuConfig.bUseGpu)
 			{
@@ -1544,21 +1624,23 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 			DeleteFile(szSaveFileName);
 			ExitThread(1);
+			ExitThread(2);
 		}
 
 		// Convert the transfer size to BYTEs or WORDs depending on the card.
 		u32TransferSizeSamples = g_StreamConfig.u32BufferSizeBytes / g_CsSysInfo.u32SampleSize;
-		int u32TransferSizeSamples1 = 0;
+		int u32TransferSizeSamplesGPU = 0;
+		int paddingSizeForSkewCalibration = 2048 / g_CsSysInfo.u32SampleSize;
 
-		u32TransferSizeSamples1 = u32TransferSizeSamples * 2;
+		u32TransferSizeSamplesGPU = u32TransferSizeSamples - paddingSizeForSkewCalibration;
 
-		segmentSize = demodulationWindowSize * 2;												// Size of one segment in the input data
+		segmentSize = demodulationWindowSize * 4;												// Size of one segment in the input data
 		corrMatrixSize = demodulationWindowSize * demodulationWindowSize;				// Size of the correlation matrix 
-		totalSegNum = u32TransferSizeSamples1 / segmentSize / 2;										// Total number of segments in the data transfer
-		totalThreads = u32TransferSizeSamples1 * demodulationWindowSize / 4;					// Total number of threads lanuched in the kernel
+		totalSegNum = u32TransferSizeSamplesGPU / segmentSize;										// Total number of segments in the data transfer
+		totalThreads = u32TransferSizeSamplesGPU * demodulationWindowSize / 4;					// Total number of threads lanuched in the kernel
 		sharedSegmentSize = blockSize * 4 / demodulationWindowSize;							// Size of the shared memory segment of one block
 		gridSize = (totalThreads + blockSize - 1) / blockSize;								// Number of blocks in the grid
-
+		// Allocate memory for the correlation matrices and scaling factors based on the correlation type
 
 		if (correlation_type == 0) {
 			// Allocate memory for the correlation matrix (aggregated and reduced), hodata and scaling factors
@@ -1696,9 +1778,9 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 
 			// Check if user has aborted or an error has occured
-			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[1], 0))
+			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamError[i], 0))
 				break;
-			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[0], 0) || WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[1], 0))
+			if (WAIT_OBJECT_0 == WaitForSingleObject(g_hStreamAbort[i], 0))
 				break;
 
 
@@ -1727,6 +1809,19 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 				QueryPerformanceCounter(&transfer_start_time);  // mark the start time of data transfer and processing
 
 			i32Status = CsStmTransferToBuffer(g_hSystem[0], 1, pCurrentBuffer1, u32TransferSizeSamples);    // Start to Transfer data from the card to the buffer
+			if (CS_FAILED(i32Status))
+			{
+				if (CS_STM_COMPLETED == i32Status)
+					bStreamCompletedSuccess = TRUE;
+				else
+				{
+					SetEvent(g_hStreamError);
+					DisplayErrorString(i32Status);
+					printf("Error in CsStmTransferToBuffer for card 1\n");
+				}
+				break;
+			}
+			
 			i32Status = CsStmTransferToBuffer(g_hSystem[1], 1, pCurrentBuffer2, u32TransferSizeSamples);    // Start to Transfer data from the card to the buffer
 
 			if (CS_FAILED(i32Status))
@@ -1737,6 +1832,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 				{
 					SetEvent(g_hStreamError);
 					DisplayErrorString(i32Status);
+					printf("Error in CsStmTransferToBuffer for card 2\n");
 				}
 				break;
 			}
@@ -1746,8 +1842,173 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 			if (NULL != d_buffer1 || NULL != d_buffer2)
 			{
-				if (g_GpuConfig.bUseGpu)
+
+				// ============================================================
+// 1. One-time calibration on loop 1
+// ============================================================
+				static BOOL  cal_done = FALSE;
+				static int   cal_edge0 = -1;   // Data_1 ch2 rising edge
+				static int   cal_edge1 = -1;   // Data_2 ch1 rising edge
+				static int   skip0_samples = 0;    // how many samples to skip for card 0
+				static int   skip1_samples = 0;    // how many samples to skip for card 1
+				const  int   target_idx = 89;   // lock edge here
+				const  int   nChan = 2;    // interleaved ABAB ? 2 channels
+				const  int   calChan0 = 1;    // Data_1 ch2 -> index 1
+				const  int   calChan1 = 0;    // Data_2 ch1 -> index 0
+
+				// -------------------------------------------------
+				// 1) One-time calibration using HOST work buffers
+				// -------------------------------------------------
+				// u32LoopCount here is the *current* loop count before increment.
+				// pWorkBuffer1/2 are set at the end of the previous loop, so:
+				//   - on loop 1, pWorkBuffer* are still NULL ? skip
+				//   - on loop 2, pWorkBuffer* contain data from loop 1 ? calibrate
+				if (!cal_done && u32LoopCount == 1 && pWorkBuffer1 && pWorkBuffer2)
 				{
+					const int nChan = 2;   // interleaved A B A B
+					const int calChan0 = 1;   // Data_1 ch2 (card 0) -> index 1
+					const int calChan1 = 0;   // Data_2 ch1 (card 1) -> index 0
+
+					short* p0 = (short*)pWorkBuffer1;   // *** HOST memory, not d_buffer1 ***
+					short* p1 = (short*)pWorkBuffer2;   // *** HOST memory, not d_buffer2 ***
+
+					int totalSamples = (int)u32TransferSizeSamples;    // samples per card
+					int nFrames = totalSamples / nChan;          // frames per channel
+					int maxFrames = (nFrames > 2048) ? 2048 : nFrames;
+
+					// --- min/max for thresholds ---
+					double lo0 = 15000, hi0 = 0;
+					double lo1 = 15000, hi1 = 0;
+
+					for (int i = 0; i < maxFrames; ++i)
+					{
+						double v0 = (double)p0[i * nChan + calChan0];
+						double v1 = (double)p1[i * nChan + calChan1];
+
+					}
+
+					double thr0 = 0.5 * (lo0 + hi0);
+					double thr1 = 0.5 * (lo1 + hi1);
+
+					// --- find rising edge Data_1 ch2 ---
+					cal_edge0 = -1;
+					for (int i = 1; i < maxFrames; ++i)
+					{
+						double prev = (double)p0[(i - 1) * nChan + calChan0];
+						double curr = (double)p0[i * nChan + calChan0];
+						if (prev < thr0 && curr >= thr0)
+						{
+							cal_edge0 = i;
+							break;
+						}
+					}
+
+					// --- find rising edge Data_2 ch1 ---
+					cal_edge1 = -1;
+					for (int i = 1; i < maxFrames; ++i)
+					{
+						double prev = (double)p1[(i - 1) * nChan + calChan1];
+						double curr = (double)p1[i * nChan + calChan1];
+						if (prev < thr1 && curr >= thr1)
+						{
+							cal_edge1 = i;
+							break;
+						}
+					}
+
+					printf("\nCAL: Data_1 ch2 rising frame = %d, Data_2 ch1 rising frame = %d, ? = %d frames\n",
+						cal_edge0, cal_edge1, cal_edge1 - cal_edge0);
+
+					const int delta_frames = cal_edge1 - cal_edge0;
+					const int delta_samples = delta_frames * nChan;
+					g_delta_samples = delta_samples;   // store globally
+
+					// ------------------------------------------------------
+					// Triangular lock on Data_1 ch1 (period = 8 samples)
+					//
+					// Goal: in the GPU view, the peak of Data_1 ch1 should
+					//       appear at the 2nd sample (frame index 2).
+					//
+					// We assume:
+					//   - Data_1 has 2 interleaved channels (A = ch1, B = ch2)
+					//   - ch0 = Data_1 ch1 (triangle), ch1 = Data_1 ch2 (cal)
+					//   - base GPU skip = 16 samples (8 frames), i.e. base_frame % 8 = 0
+					// ------------------------------------------------------
+					const int triChan = 0;      // Data_1 ch1 (triangle)
+					const int period = 8;      // 8-sample period
+					int tri_peak_frame = -1;
+					double tri_peak_val = -1e30;
+
+					// Scan the first 8 frames of Data_1 ch1
+					int maxTriFrames = (nFrames < period) ? nFrames : period;
+					for (int i = 0; i < maxTriFrames; ++i)
+					{
+						double v = (double)p0[i * nChan + triChan];
+						if (v > tri_peak_val)
+						{
+							tri_peak_val = v;
+							tri_peak_frame = i;     // frame index (0..7)
+						}
+					}
+
+					// Default base skip: 16 samples (8 frames)
+					int base_skip_samples = 16;
+
+					int extra_frames = 0;
+					if (tri_peak_frame >= 0)
+					{
+						// We want: (start_frame + 2) ? tri_peak_frame (mod 8)
+						// start_frame = base_frame + extra_frames
+						// base_frame = base_skip_samples / nChan = 8 -> 0 mod 8
+						// => extra_frames ? tri_peak_frame - 2 (mod 8)
+						extra_frames = (tri_peak_frame - 2) & (period - 1); // mod 8
+
+						printf("CAL: triangle peak frame = %d, extra_frames = %d\n",
+							tri_peak_frame, extra_frames);
+					}
+
+					// Convert extra_frames to samples and apply to both boards
+					int extra_samples = extra_frames * nChan;
+
+					gpu_skip0_samples = base_skip_samples + extra_samples;
+					gpu_skip1_samples = gpu_skip0_samples + delta_samples;
+
+					printf("CAL: gpu_skip0_samples = %d, gpu_skip1_samples = %d\n",
+						gpu_skip0_samples, gpu_skip1_samples);
+
+
+
+
+					cal_done = TRUE;
+
+					if (cal_edge0 < 0 || cal_edge1 < 0) {
+						printf("\nCAL: Data_1 ch2 or Data_2 ch1 not found, exiting\n");
+						SetEvent(g_hStreamError[i]);
+
+						SetEvent(g_hStreamAbort[0]);
+						SetEvent(g_hStreamAbort[1]);
+
+						// tell main that this abort wants an automatic restart
+						if (g_hStreamRestart)
+							SetEvent(g_hStreamRestart);
+
+
+						// In case RestartMyself() fails:
+						return 0;
+					}
+					else {
+						g_cal_valid = TRUE;
+					}
+				}
+
+
+				// ============================================================
+				if (g_GpuConfig.bUseGpu && u32LoopCount > 1)
+				{
+
+					short* d_in0 = (short*)d_buffer1 + gpu_skip0_samples;
+					short* d_in1 = (short*)d_buffer2 + gpu_skip1_samples;
+
 
 					if (timer == TRUE)
 						QueryPerformanceCounter(&process_start_time);	 // mark the start time of data processing	
@@ -1755,9 +2016,9 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 					if (correlation_type == 0) {
 						// perform cross correlation compute using GPU on the input data
 						cudaStatus = ComputeCrossCorrelationGPU(u32LoopCount,
-							(short*)d_buffer1,
-							(short*)d_buffer2,
-							u32TransferSizeSamples1,
+							d_in0,
+							d_in1,
+							u32TransferSizeSamplesGPU,
 							totalThreads,
 							gridSize,
 							blockSize,
@@ -1778,9 +2039,9 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 					else if (correlation_type == 1) {
 						// perform g2 correlation compute using GPU on the input data
 						cudaStatus = ComputeG2CorrelationGPU(u32LoopCount,
-							(short*)d_buffer1,
-							(short*)d_buffer2,
-							u32TransferSizeSamples1,
+							d_in0,
+							d_in1,
+							u32TransferSizeSamplesGPU,
 							totalThreads,
 							gridSize,
 							blockSize,
@@ -1836,6 +2097,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 				// While data transfer of the current buffer is in progress, save the data from pWorkBuffer to hard disk
 				dwBytesSave = 0;
 				bWriteSuccess = WriteFile(hFile, pWorkBuffer1, g_StreamConfig.u32BufferSizeBytes, &dwBytesSave, NULL);
+				bWriteSuccess = WriteFile(hFile2, pWorkBuffer2, g_StreamConfig.u32BufferSizeBytes, &dwBytesSave, NULL);
 				if (!bWriteSuccess || dwBytesSave != g_StreamConfig.u32BufferSizeBytes)
 				{
 					_ftprintf(stdout, _T("\nWriteFile() error on card %d !!! (GetLastError() = 0x%x\n"), nCardIndex, GetLastError());
@@ -1845,11 +2107,14 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 
 			if (NULL != pWorkBuffer1 && useIPC) {
-				int result = handleClientRequests(raw_signal_hPipe, pWorkBuffer1, pWorkBuffer2, h_odata, 0, 200, 0);  // 200 is the number of bytes to send, check request from client and send data
-				if (result == 4) {
-					SetEvent(g_hStreamAbort[0]);
+				const int bytesPerSample = sizeof(short);
 
-					SetEvent(g_hStreamAbort[1]);
+				short* ipcBuf0 = (short*)pWorkBuffer1 + gpu_skip0_samples ;
+				short* ipcBuf1 = (short*)pWorkBuffer2 + gpu_skip1_samples ;
+
+				int result = handleClientRequests(raw_signal_hPipe, ipcBuf0, ipcBuf1, h_odata, 0, 200, 0);  // 200 is the number of bytes to send, check request from client and send data
+				if (result == 4) {
+					SetEvent(g_hStreamAbort[i]);
 
 					bDone = TRUE;
 				}
@@ -1886,8 +2151,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 						{
 							// g_StreamConfig.bErrorHandling != 0
 							// Stop as soon as we recieve the FIFO full error from the card
-							SetEvent(g_hStreamError[0]);
-							SetEvent(g_hStreamError[1]);
+							SetEvent(g_hStreamError[i]);
 							_ftprintf(stdout, _T("\nFifo full detected on the card %d !!!\n"), nCardIndex);
 							bDone = TRUE;
 						}
@@ -1907,8 +2171,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 					if (u32ErrorFlag1 & u32ErrorFlag2 & STM_TRANSFER_ERROR_CHANNEL_PROTECTION)
 					{
 						// Channel protection error as coccrued
-						SetEvent(g_hStreamError[0]);
-						SetEvent(g_hStreamError[1]);
+						SetEvent(g_hStreamError[i]);
 						_ftprintf(stdout, _T("\nChannel Protection Error on Board %d!!!\n"), nCardIndex);
 						bDone = TRUE;
 					}
@@ -1916,8 +2179,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 			else
 			{
-				SetEvent(g_hStreamError[0]);
-				SetEvent(g_hStreamError[1]);
+				SetEvent(g_hStreamError[i]);
 				bDone = TRUE;
 
 				if (CS_STM_TRANSFER_TIMEOUT == i32Status)
@@ -1942,18 +2204,17 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 
 
-
 			pWorkBuffer1 = pCurrentBuffer1;
 			pWorkBuffer2 = pCurrentBuffer2;
 
 			if (pCurrentBuffer1 == pBuffer11 && pCurrentBuffer2 == pBuffer21) {
-				d_buffer1 = d_buffer11;
-				d_buffer2 = d_buffer21;
+				d_buffer1 = (void*)(((short*)d_buffer11) );
+				d_buffer2 = (void*)(((short*)d_buffer11) );
 			}
 
 			else {
-				d_buffer1 = d_buffer12;
-				d_buffer2 = d_buffer22;
+				d_buffer1 = (void*)(((short*)d_buffer12) );
+				d_buffer2 = (void*)(((short*)d_buffer22) );
 			}
 
 			u32LoopCount++;
@@ -1968,15 +2229,10 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			}
 		}
 
-
-	
-
 		if (g_GpuConfig.bDoAnalysis)
 		{
 			QueryPerformanceCounter((LARGE_INTEGER*)&start_time);
 		}
-
-
 
 		// If the stream has completed successfully, there may be some valid data in the last buffer to be saved
 		if (bStreamCompletedSuccess && g_StreamConfig.bSaveToFile && NULL != pWorkBuffer1)
@@ -1996,10 +2252,11 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 
 			// Save the data from pWorkBuffer to hard disk
 			bWriteSuccess = WriteFile(hFile, pWorkBuffer1, u32WriteSize, &dwBytesSave, NULL);
+			bWriteSuccess = WriteFile(hFile2, pWorkBuffer2, u32WriteSize, &dwBytesSave, NULL);
 			if (!bWriteSuccess || dwBytesSave != u32WriteSize)
 			{
 				_ftprintf(stdout, _T("\nWriteFile() error on card %d !!! (GetLastError() = 0x%x\n"), nCardIndex, GetLastError());
-				SetEvent(g_hStreamError);
+				SetEvent(g_hStreamError[i]);
 			}
 		}
 		if (g_GpuConfig.bDoAnalysis)
@@ -2008,8 +2265,11 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 			diff_time[nCardIndex - 1] += ((double)end_time.QuadPart - (double)start_time.QuadPart) / freq;
 		}
 		// Close the data file and free all streaming buffers
-		if (g_StreamConfig.bSaveToFile)		CloseHandle(hFile);
-
+		if (g_StreamConfig.bSaveToFile)
+		{
+			CloseHandle(hFile);
+			CloseHandle(hFile2);
+		}
 		if (g_GpuConfig.bUseGpu)
 		{
 			cudaHostUnregister(h_buffer11);
@@ -2060,7 +2320,7 @@ DWORD WINAPI CardStreamThread(void* CardIndex)
 		fclose(binFile);
 		fclose(analysisFile);
 
-		InjectEscToConsole(); // to notify the main thread that the streaming thread has completed
+
 
 		return dwRetCode;
 	}
@@ -2098,6 +2358,31 @@ BOOL Prepare_Cleanup()
 	}
 
 	return bSuccess;
+}
+
+static int InitEvents(int nSystems) {
+	for (int i = 0; i < nSystems; ++i) {
+		// auto-reset, not signaled
+		g_hThreadReadyForStream[i] = CreateEvent(NULL, /*bManualReset*/FALSE, FALSE, NULL);
+		// auto-reset, not signaled (start is a one-shot poke)
+		g_hStreamStarted[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
+		// manual-reset, not signaled (once set, stays set so everyone sees abort)
+		g_hStreamAbort[i] = CreateEvent(NULL, TRUE, FALSE, NULL);
+		// manual-reset, not signaled (latched error flag)
+		g_hStreamError[i] = CreateEvent(NULL, TRUE, FALSE, NULL);
+
+		if (!g_hThreadReadyForStream[i] || !g_hStreamStarted[i] ||
+			!g_hStreamAbort[i] || !g_hStreamError[i]) {
+			return -1; // handle error/log GetLastError()
+		}
+	}
+	// NEW: one global restart event
+	if (!g_hStreamRestart) {
+		g_hStreamRestart = CreateEvent(NULL, TRUE, FALSE, NULL); // manual-reset
+		if (!g_hStreamRestart)
+			return -1;
+	}
+	return 0;
 }
 
 int InjectEscToConsole(void) {

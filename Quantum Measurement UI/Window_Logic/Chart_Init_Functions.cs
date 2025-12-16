@@ -7,7 +7,8 @@ using System.Windows.Media;
 using System.IO;
 using System.Windows.Threading;
 using System.Diagnostics;
-using System.Windows.Controls;
+
+
 using QuantumSqueezingUI;
 using System.Collections.ObjectModel;
 

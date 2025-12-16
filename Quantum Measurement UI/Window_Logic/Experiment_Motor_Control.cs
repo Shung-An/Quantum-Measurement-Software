@@ -8,10 +8,12 @@ using System.Diagnostics;
 using QuantumSqueezingUI;
 using Quantum_measurement_UI;
 using System.Windows.Media;
+using System.Text.Json;
+using Microsoft.UI.Xaml;
 
 namespace Quantum_measurement_UI
 {
-    public partial class MainWindow : Window
+    public partial class MainWindow : System.Windows.Window
     {
         #region Experiment Control Functions
 
@@ -27,9 +29,12 @@ namespace Quantum_measurement_UI
 
             try
             {
-                Task signal = Task.Run(() => Connection());
+
                 StartGageStreamProcess();   // Start the GageStreamThruGPU program, which is in the directory of the executable
-                InitializePipeClient();     // Initialize the pipe client for communication
+
+                Task signal = Task.Run(() => Connection());
+               
+                await AsyncInitializePipeClient();     // Initialize the pipe client for communication
 
                 // Fetch external clock value from the ini file
                 extClkValue = GetExtClkValueFromIni();
@@ -46,12 +51,14 @@ namespace Quantum_measurement_UI
                 ExperimentStatusIndicator.Fill = Brushes.Green;
 
                 // Initialize the experiment log
-                InitializeExperimentLog();
+                await AsyncInitializeExperimentLog();
+
+
 
                 // Start the delay stage program
-                
+
                 startDelayStageProgram();
-                Thread.Sleep(500); // Wait for 0.5 seconds to ensure the delay stage program is started
+                await Task.Delay(500); // Wait for 0.5 seconds to ensure the delay stage program is started
                 await signal;
                 window = new Mov_Avg(20);
 
@@ -71,6 +78,10 @@ namespace Quantum_measurement_UI
                 await pipeClient.WriteAsync(expDirBytes, 0, expDirBytes.Length); // Send the experiment directory
 
                 StartAutobalanceButton_Click(null, null); // Start the autobalancer
+                await Task.Delay(5000);
+
+
+
 
                 isPaused = false; // Data updates for signal chart and cross correlation matrix visualization can start
                 AppendMessage("Gage Digitizer Data Acquisition started.");
@@ -80,6 +91,11 @@ namespace Quantum_measurement_UI
                 StartDataUpdates();
                 // Start motor position updates automatically
                 StartMotorPositionUpdates();
+
+                await Task.Delay(1000);
+
+              
+                StartAutobalanceButton_Click(null, null); // Start the autobalancer
             }
             catch (Exception ex)
             {
@@ -100,7 +116,8 @@ namespace Quantum_measurement_UI
                 motionCancellationTokenSource?.Cancel();         // Stop automatic motion
                 autobalancer?.Stop();                            // Stop autobalancer
                 espPositionCancellationTokenSource?.Cancel();    // Stop ESP position updates
-                autoReadCts?.Cancel();                           // Stop auto read
+                autoReadCts?.Cancel();
+
                 esp300Controller?.AbortProgram();                      // Stop ESP300 controller
 
                 stopDelayStageProgram();                         // Stop delay stage program
@@ -123,6 +140,7 @@ namespace Quantum_measurement_UI
                 await Task.Delay(500);
 
                 // Close pipe
+                autoReadCts.Dispose();                          // Stop auto read
                 pipeClient?.Dispose();
                 pipeClient = null;
 
@@ -164,6 +182,10 @@ namespace Quantum_measurement_UI
                     experimentLogWriter.Flush();
                     experimentLogWriter.Close();
                     experimentLogWriter = null;
+                    // Close all log writers
+                    motorMetricLogWriter?.Close();
+                    sensitivityLogWriter?.Close();
+                    droppedWindowLogWriter?.Close();
                 }
 
                 // Reset experiment status indicators
@@ -171,8 +193,18 @@ namespace Quantum_measurement_UI
                 elapsedTimer.Stop();
                 ExperimentStatusText.Text = "Off";
                 ExperimentStatusIndicator.Fill = Brushes.Red;
+                DelayStageStatusText.Text = "Off";
+                DelayStageStatusIndicator.Fill = Brushes.Red;
 
                 isPaused = true; // Pause data updates
+                                 // Combine base path with the new folder name to get full path
+                string fullResultPath = System.IO.Path.Combine(resultsBaseDirectory, experimentLogDirectory);
+                SaveExperimentMetadata(fullResultPath, ElapsedTimeText.Text);
+                /*RenameExperimentFolder();*/
+
+
+
+
 
                 // Clear all charts/data on UI thread (null-safe)
                 await Dispatcher.InvokeAsync(() =>
@@ -191,15 +223,56 @@ namespace Quantum_measurement_UI
                     autobalancer?.MetricValuesA?.Clear();
                     autobalancer?.MetricValuesB?.Clear();
 
+
                     SelectedPixelValue.Text = "0.00";
                     ElapsedTimeText.Text = "00:00:00";
                 });
+                await RunMatlabAnalysisAsync(fullResultPath);
+
             }
+
             catch (Exception ex)
             {
                 AppendMessage($"Error during termination: {ex.Message}");
                 LogExperimentEvent($"Error during termination: {ex.Message}");
             }
+
+        }
+
+        private void SaveExperimentMetadata(string folderPath, string elapsedTime)
+        {
+
+            // Get lists from UI
+            var samples = GetSelectedSamples();
+            var tags = GetSelectedTags();
+
+            // Create the metadata object with all fields
+            var meta = new
+            {
+                Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                Duration = elapsedTime,
+                Filename = FileNameInput.Text,
+                Description = DescriptionInput.Text,
+
+                // Save as a comma-joined string (easier to read in Excel/History Grid)
+                Sample = string.Join(", ", samples),
+                Tags = tags,
+                                      
+
+                // Machine Configuration (snapshot of current state)
+                Configuration = new
+                {
+                    EnableFFT = this.EnableFFT,
+                    ExternalClock = ExtClkStatusText.Text,
+                    Motor1Position = CalibrationMotor1Pos.Text, // Assuming you have this
+                    Motor2Position = CalibrationMotor2Pos.Text,
+                    ExternalClockStatus = ExtClkStatusText.Text
+                }
+            };
+
+            // Serialize to JSON and write to file
+            string jsonString = System.Text.Json.JsonSerializer.Serialize(meta, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            System.IO.File.WriteAllText(System.IO.Path.Combine(folderPath, "metadata.json"), jsonString);
         }
 
         #endregion
