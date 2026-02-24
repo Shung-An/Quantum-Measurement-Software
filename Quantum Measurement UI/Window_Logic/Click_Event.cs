@@ -37,6 +37,12 @@ namespace Quantum_measurement_UI
             {
                 AppendMessage("Experiment is already running.");
             }
+            // 2. SAFETY CHECK: Check if Alignment is currently running
+            if (isAlignmentRunning)
+            {
+                AppendMessage("Cannot start Experiment: Alignment is currently active. Please turn off Alignment first.");
+                return;
+            }
             else
             {
                 await StartExperimentAsync();
@@ -49,6 +55,54 @@ namespace Quantum_measurement_UI
         private async void TerminateButton_Click(object sender, RoutedEventArgs e)
         {
             await TerminateExperimentAsync();
+        }
+
+        private async void StartAlignmentButton_Click(object sender, RoutedEventArgs e)
+        {
+            // 1. Check if Alignment is already running
+            if (isAlignmentRunning)
+            {
+                AppendMessage("Alignment is already active.");
+                return;
+            }
+
+            // 2. SAFETY CHECK: Check if Experiment is currently running
+            if (isExperimentRunning)
+            {
+                AppendMessage("Cannot start Alignment: Experiment is currently active. Please turn off the Experiment first.");
+                return;
+            }
+
+            // 3. Start Alignment
+            try
+            {
+                isAlignmentRunning = true;
+
+                // Define this method similarly to StartExperimentAsync
+                await StartAlignmentAsync();
+
+                AppendMessage("Alignment started (40 MHz).");
+            }
+            catch (Exception ex)
+            {
+                isAlignmentRunning = false;
+                AppendMessage($"Error starting alignment: {ex.Message}");
+            }
+        }
+
+        private async void StopAlignmentButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!isAlignmentRunning)
+            {
+                AppendMessage("Alignment is not currently active.");
+                return;
+            }
+
+            // Define this method similarly to TerminateExperimentAsync
+            await StopAlignmentAsync();
+
+            isAlignmentRunning = false;
+            AppendMessage("Alignment stopped.");
         }
 
         /// <summary>

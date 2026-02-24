@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GageStreamThruGPU", "GageSt
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuantumDAQService", "QuantumDAQService\QuantumDAQService.csproj", "{3DE2CB80-524F-4748-A9A7-9E1C155ACC65}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GageStreamThruGPU", "GageStreamThruGPUAlignment\GageStreamThruGPU-Alignment.vcxproj", "{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,14 @@ Global
 		{3DE2CB80-524F-4748-A9A7-9E1C155ACC65}.Release|Any CPU.Build.0 = Release|Any CPU
 		{3DE2CB80-524F-4748-A9A7-9E1C155ACC65}.Release|x64.ActiveCfg = Release|Any CPU
 		{3DE2CB80-524F-4748-A9A7-9E1C155ACC65}.Release|x64.Build.0 = Release|Any CPU
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Debug|Any CPU.Build.0 = Debug|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Debug|x64.ActiveCfg = Debug|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Debug|x64.Build.0 = Debug|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Release|Any CPU.ActiveCfg = Release|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Release|Any CPU.Build.0 = Release|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Release|x64.ActiveCfg = Release|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

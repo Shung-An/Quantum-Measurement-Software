@@ -98,8 +98,8 @@ __global__ void demodulationCrossCorrelation(
 		double value3 = sharedSegment[segmentStart + col * 2 + 1];
 		double value4 = sharedSegment[segmentStart + (col + demodulationWindowSize) * 2 + 1];
 
-		double corrValue = (value1 - value2) * (value3 - value4);
-		//double corrValue = (value1 + value2) /1;
+		//double corrValue = (value1 - value2) * (value3 - value4);
+		double corrValue = (value1 + value2) /1; // This is for aligment testing only
 
 		aggregatedCorrMatrix[index] = corrValue; // Correlation matrix, one column is a single correlation matrix, column-major order
 	}

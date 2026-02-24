@@ -159,10 +159,10 @@ namespace Quantum_measurement_UI
                 mainWindow.LogExperimentEvent("[AutoBalance] Coarse tuning session started.");
             });
 
-            const double tolerance = 0.00005; // volts
+            const double tolerance = 0.005; // volts
             const int maxStep = 50;        // max motor steps in one move
-            const double coarseFactor = 800; // volts-to-steps for large errors
-            const double fineFactor = 800;  // volts-to-steps for small errors
+            const double coarseFactor = 300; // volts-to-steps for large errors
+            const double fineFactor = 20;  // volts-to-steps for small errors
 
             while (!cancellationToken.IsCancellationRequested && isTimeToBalance())
             {

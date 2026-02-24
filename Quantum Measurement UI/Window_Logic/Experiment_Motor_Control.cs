@@ -57,15 +57,12 @@ namespace Quantum_measurement_UI
 
                 // Start the delay stage program
 
-                startDelayStageProgram();
+                await startDelayStageProgram();
                 await Task.Delay(500); // Wait for 0.5 seconds to ensure the delay stage program is started
                 await signal;
                 window = new Mov_Avg(20);
 
-                // Start the ESP position update task
-                espPositionCancellationTokenSource = new CancellationTokenSource();
-                _ = Task.Run(() => UpdateESPPosition(espPositionCancellationTokenSource.Token));
-               
+
                 // Start the Daq Signal Check
                 _ = Task.Run(() => ReadSignal());
 
@@ -92,10 +89,6 @@ namespace Quantum_measurement_UI
                 // Start motor position updates automatically
                 StartMotorPositionUpdates();
 
-                await Task.Delay(1000);
-
-              
-                StartAutobalanceButton_Click(null, null); // Start the autobalancer
             }
             catch (Exception ex)
             {
@@ -115,7 +108,6 @@ namespace Quantum_measurement_UI
                 motorPositionCancellationTokenSource?.Cancel();  // Stop motor position updates
                 motionCancellationTokenSource?.Cancel();         // Stop automatic motion
                 autobalancer?.Stop();                            // Stop autobalancer
-                espPositionCancellationTokenSource?.Cancel();    // Stop ESP position updates
                 autoReadCts?.Cancel();
 
                 esp300Controller?.AbortProgram();                      // Stop ESP300 controller
@@ -237,6 +229,187 @@ namespace Quantum_measurement_UI
                 LogExperimentEvent($"Error during termination: {ex.Message}");
             }
 
+        }
+
+
+        // Define a separate flag for alignment if you haven't already
+        // private bool isAlignmentRunning = false;
+
+        private async Task StartAlignmentAsync()
+        {
+            // 1. Safety Check: Ensure Experiment is not running
+            if (isExperimentRunning)
+            {
+                AppendMessage("Cannot start Alignment while Experiment is running.");
+                return;
+            }
+
+            // 2. Ensure previous alignment is terminated if somehow stuck
+            if (isAlignmentRunning)
+            {
+                await StopAlignmentAsync();
+            }
+
+            try
+            {
+                // --- A. Hardware & Connection Setup ---
+                StartGageStreamProcessForAlignment();   // Start the external Gage executable
+
+                Task signal = Task.Run(() => Connection()); // Start connection task
+                await AsyncInitializePipeClient();          // Initialize Pipe
+
+                // --- B. UI & State Setup ---
+                // Fetch external clock (useful to know even during alignment)
+                extClkValue = GetExtClkValueFromIni();
+                ExtClkStatusText.Text = extClkValue == 1 ? "On" : "Off";
+                ExtClkStatusIndicator.Fill = extClkValue == 1 ? Brushes.Green : Brushes.Red;
+
+                isAlignmentRunning = true; // Set Flag
+
+                // Visual Feedback
+                ExperimentStatusText.Text = "Aligning";
+                ExperimentStatusIndicator.Fill = Brushes.Yellow; // Use Yellow to differentiate from Green (Experiment)
+
+                // --- C. Logging Setup (Simplified for Alignment) ---
+                // Create a temporary or specific alignment directory so we don't pollute experiment data
+                string dateStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                experimentLogDirectory = $"Alignment_Data\\{dateStr}";
+
+                // Ensure directory exists
+                string fullAlignmentPath = System.IO.Path.Combine(resultsBaseDirectory, experimentLogDirectory);
+                System.IO.Directory.CreateDirectory(fullAlignmentPath);
+
+                // Initialize basic log just for errors/events
+                await AsyncInitializeExperimentLog();
+
+                // --- D. Start Sub-Systems ---
+                await Task.Delay(500);
+                await signal; // Wait for connection
+
+
+
+                // Start reading signals
+                _ = Task.Run(() => ReadSignal());
+
+                // --- E. Send Commands to C++ Server ---
+                // Send Request to Start (1)
+                byte[] request = BitConverter.GetBytes((short)1);
+                await pipeClient.WriteAsync(request, 0, request.Length);
+
+                // Send Directory (Pass the alignment specific path)
+                byte[] expDirBytes = System.Text.Encoding.ASCII.GetBytes(experimentLogDirectory);
+                await pipeClient.WriteAsync(expDirBytes, 0, expDirBytes.Length);
+
+                // --- F. Start Control Loops ---
+                // Depending on your needs, you might NOT want auto-balancing during alignment
+                // if you are trying to manually tune it. I have commented it out by default.
+                // StartAutobalanceButton_Click(null, null); 
+
+                await Task.Delay(2000); // Short delay to let hardware settle
+
+                isPaused = false; // Enable UI Chart Updates
+                AppendMessage("Alignment Started: Real-time data active.");
+
+                // Start Visualization Updates
+                StartDataUpdates();
+                StartMotorPositionUpdates();
+            }
+            catch (Exception ex)
+            {
+                isAlignmentRunning = false;
+                AppendMessage($"Failed to start alignment: {ex.Message}");
+            }
+        }
+
+        private async Task StopAlignmentAsync()
+        {
+            try
+            {
+                // --- A. Stop Processes & Tokens ---
+                cancellationTokenSource?.Cancel();            // Stop data updates
+                motorPositionCancellationTokenSource?.Cancel(); // Stop motor updates
+                motionCancellationTokenSource?.Cancel();      // Stop any auto-motion
+
+                // Stop Autobalancer if it was running
+                autobalancer?.Stop();
+                autoReadCts?.Cancel();
+
+                // Stop ESP300 and Delay Stage
+                esp300Controller?.AbortProgram();
+                stopDelayStageProgram();
+
+                Release(); // Release resources
+
+                await Task.Delay(500); // Grace period
+
+                // --- B. Send Terminate Command to C++ Server ---
+                if (pipeClient?.IsConnected == true)
+                {
+                    byte[] request = BitConverter.GetBytes((short)3); // Terminate acquisition (3)
+                    await pipeClient.WriteAsync(request, 0, request.Length);
+                    await pipeClient.FlushAsync();
+                }
+
+                await Task.Delay(500);
+
+                // --- C. Cleanup Pipe & Process ---
+                autoReadCts?.Dispose();
+                pipeClient?.Dispose();
+                pipeClient = null;
+
+                if (gageStreamProcess != null && !gageStreamProcess.HasExited)
+                {
+                    await Task.Run(() => gageStreamProcess.WaitForExit());
+                    gageStreamProcess.Dispose();
+                    gageStreamProcess = null;
+                }
+
+                AppendMessage("Alignment stopped.");
+
+                // --- D. Close Logs ---
+                if (experimentLogWriter != null)
+                {
+                    experimentLogWriter.WriteLine("\n--- Alignment End ---\n");
+                    experimentLogWriter.Flush();
+                    experimentLogWriter.Close();
+                    experimentLogWriter = null;
+                }
+                // Close other specific logs
+                motorMetricLogWriter?.Close();
+                sensitivityLogWriter?.Close();
+                droppedWindowLogWriter?.Close();
+
+                // --- E. UI Reset ---
+                isAlignmentRunning = false;
+
+                ExperimentStatusText.Text = "Off";
+                ExperimentStatusIndicator.Fill = Brushes.Red;
+                DelayStageStatusText.Text = "Off";
+                DelayStageStatusIndicator.Fill = Brushes.Red;
+
+                isPaused = true;
+
+                // --- F. Clear Charts (UI Thread) ---
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    ChannelAValues?.Clear();
+                    ChannelBValues?.Clear();
+                    heatValues?.Clear();
+                    PixelValues?.Clear();
+
+                    // Reset metrics
+                    PixelCumulativeSum = 0;
+                    PixelCount = 0;
+                    SelectedPixelValue.Text = "0.00";
+                });
+
+                // NOTE: Skipped FFT and MATLAB analysis here because 
+                // alignment is usually about visual confirmation, not post-processing.
+            }
+            catch (Exception ex)
+            {
+                AppendMessage($"Error during alignment termination: {ex.Message}");
+            }
         }
 
         private void SaveExperimentMetadata(string folderPath, string elapsedTime)

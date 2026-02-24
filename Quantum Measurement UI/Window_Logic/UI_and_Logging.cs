@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Text.Json;
 using System.Windows.Input;
 using System.Windows.Controls;
+using System.Collections.Concurrent;
 
 namespace Quantum_measurement_UI
 {
@@ -108,142 +109,152 @@ namespace Quantum_measurement_UI
                 SharedMessageLog.ScrollToEnd();
             });
         }
-        // Store the full list so we can filter it later
-        private List<ExperimentRecord> allExperiments = new List<ExperimentRecord>();
 
-        private void RefreshHistory_Click(object sender, RoutedEventArgs e)
+        // The master list of data
+        private List<ExperimentRecord> _allExperiments = new List<ExperimentRecord>();
+
+        private async Task LoadHistoryAsync()
         {
-            LoadExperimentHistory();
-        }
+            string targetFolder = @"D:\Quantum Squeezing Project\DataFiles";
 
-        private void LoadExperimentHistory()
-        {
-            allExperiments = new List<ExperimentRecord>(); // GOOD: Creates a fresh list
-
-            // 1. Check if the base directory exists
-            if (!Directory.Exists(resultsBaseDirectory)) return;
-
-            // 2. Get all subdirectories (each represents one experiment)
-            string[] directories = Directory.GetDirectories(resultsBaseDirectory);
-
-            // 3. Loop through them backwards (newest first)
-            foreach (var dir in directories.Reverse())
+            if (!Directory.Exists(targetFolder))
             {
-                string jsonPath = Path.Combine(dir, "metadata.json");
+                MessageBox.Show($"Folder not found: {targetFolder}");
+                return;
+            }
 
-                // Only list folders that have our metadata file
-                if (File.Exists(jsonPath))
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
+            };
+
+            var tempCollection = new ConcurrentBag<ExperimentRecord>();
+
+            await Task.Run(() =>
+            {
+                var files = Directory.GetFiles(targetFolder, "*.json", SearchOption.AllDirectories);
+
+                Parallel.ForEach(files, (file) =>
                 {
                     try
                     {
-                        string jsonContent = File.ReadAllText(jsonPath);
+                        var jsonBytes = File.ReadAllBytes(file);
+                        var data = JsonSerializer.Deserialize<ExperimentRecord>(jsonBytes, options);
 
-                        // Flexible parsing using JsonElement to handle missing fields gracefully
-                        using (JsonDocument doc = JsonDocument.Parse(jsonContent))
+                        if (data != null)
                         {
-                            JsonElement root = doc.RootElement;
+                            data.FullPath = file;
+                            string folderName = new DirectoryInfo(Path.GetDirectoryName(file)).Name;
 
-                            // 1. Existing Helpers
-                            string GetStr(string name) => root.TryGetProperty(name, out var p) ? p.ToString() : "";
-
-                            string GetPhys(string name)
+                            // --- STEP A: Try parsing the JSON string date ---
+                            bool dateFound = false;
+                            if (!string.IsNullOrEmpty(data.TimestampString))
                             {
-                                if (root.TryGetProperty("PhysicsData", out var phys) &&
-                                    phys.TryGetProperty(name, out var val))
+                                // Handles "2025-12-16 12:49:18" correctly now
+                                if (DateTime.TryParse(data.TimestampString, out DateTime jsonDate))
                                 {
-                                    if (val.ValueKind == JsonValueKind.Number)
-                                        return val.GetDouble().ToString("0.###");
-                                    return val.ToString();
+                                    data.SortableDate = jsonDate;
+                                    dateFound = true;
                                 }
-                                return "-";
                             }
 
-                            // --- FIX START: Declare variable outside the if block ---
-                            string tagStr = "";
-
-                            if (root.TryGetProperty("Tags", out var tagsArray) && tagsArray.ValueKind == JsonValueKind.Array)
+                            // --- STEP B: If JSON date failed/missing, try Folder Name ---
+                            if (!dateFound)
                             {
-                                List<string> tList = new List<string>();
-                                foreach (var t in tagsArray.EnumerateArray()) tList.Add(t.ToString());
-                                tagStr = string.Join(", ", tList);
+                                if (DateTime.TryParseExact(folderName, "yyyyMMdd_HHmmss",
+                                    System.Globalization.CultureInfo.InvariantCulture,
+                                    System.Globalization.DateTimeStyles.None,
+                                    out DateTime folderDate))
+                                {
+                                    data.SortableDate = folderDate;
+                                }
+                                else
+                                {
+                                    // --- STEP C: Last Resort - File Creation Time ---
+                                    data.SortableDate = File.GetCreationTime(file);
+                                }
                             }
-                            // --- FIX END ---
 
-                            // Logic to sum power
-                            double p1 = 0, p2 = 0;
-                            if (root.TryGetProperty("PhysicsData", out var pData))
+                            // --- Fix Name for Display ---
+                            if (Path.GetFileName(file).ToLower().Contains("metadata"))
                             {
-                                if (pData.TryGetProperty("Power_mW_1", out var vp1)) p1 = vp1.GetDouble();
-                                if (pData.TryGetProperty("Power_mW_2", out var vp2)) p2 = vp2.GetDouble();
+                                data.Filename = folderName;
                             }
-                            string totalPower = (p1 + p2).ToString("0.##");
-
-                            var record = new ExperimentRecord
+                            else if (string.IsNullOrEmpty(data.Filename))
                             {
-                                Timestamp = GetStr("Timestamp"),
-                                Duration = GetStr("Duration"),
-                                Sample = GetStr("Sample"),
-                                Description = GetStr("Description"),
-                                Tags = tagStr, // Now this variable exists regardless of the if-check above
-                                FullPath = dir,
+                                data.Filename = Path.GetFileName(file);
+                            }
 
-                                // Map new fields
-                                ShotNoiseResult = GetPhys("ShotNoiseResult_urad2_rtHz"),
-                                Sensitivity = GetPhys("Sensitivity_V_photon"),
-                                ScanRange = GetPhys("ScanRange_mm"),
-                                TotalPower = totalPower
-                            };
+                            if (string.IsNullOrEmpty(data.Sample)) data.Sample = "Unknown";
 
-                            allExperiments.Add(record);
+                            tempCollection.Add(data);
                         }
                     }
-                    catch
+                    catch { /* Corruption or lock */ }
+                });
+            });
+
+            _allExperiments = tempCollection.OrderByDescending(x => x.SortableDate).ToList();
+            HistoryGrid.ItemsSource = _allExperiments;
+        }
+        // ---------------------------------------------------------
+        // COPY THIS INTO UI_and_Logging.cs
+        // ---------------------------------------------------------
+
+        /// <summary>
+        /// Opens the folder containing the selected experiment file.
+        /// </summary>
+        private void OpenSelectedFolder_Click(object sender, RoutedEventArgs e)
+        {
+            // Check if a row is actually selected
+            if (HistoryGrid.SelectedItem is ExperimentRecord record)
+            {
+                // Ensure we have a valid path
+                if (!string.IsNullOrEmpty(record.FullPath) && File.Exists(record.FullPath))
+                {
+                    try
                     {
-                        // If a JSON file is corrupt, just skip it or log error
+                        // Open Windows Explorer with the file selected
+                        string argument = "/select, \"" + record.FullPath + "\"";
+                        System.Diagnostics.Process.Start("explorer.exe", argument);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Could not open folder: {ex.Message}");
                     }
                 }
+                else
+                {
+                    MessageBox.Show("File path not found. Try refreshing the list.");
+                }
             }
-
-            // 4. Update the UI
-            HistoryGrid.ItemsSource = allExperiments;
         }
-
-        // Search Filter
         private void HistorySearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            string query = HistorySearchBox.Text.ToLower();
+            var query = HistorySearchBox.Text.ToLower();
 
             if (string.IsNullOrWhiteSpace(query))
             {
-                HistoryGrid.ItemsSource = allExperiments;
+                HistoryGrid.ItemsSource = _allExperiments;
+                return;
             }
-            else
-            {
-                // Filter: Match Sample OR Tags OR Description
-                var filtered = allExperiments.Where(r =>
-                    (r.Sample != null && r.Sample.ToLower().Contains(query)) ||
-                    (r.Tags != null && r.Tags.ToLower().Contains(query)) ||
-                    (r.Description != null && r.Description.ToLower().Contains(query))
-                ).ToList();
 
-                HistoryGrid.ItemsSource = filtered;
-            }
+            var filtered = _allExperiments.Where(x =>
+                (x.Sample != null && x.Sample.ToLower().Contains(query)) ||
+                (x.TagsDisplay.ToLower().Contains(query)) ||
+                (x.Description != null && x.Description.ToLower().Contains(query))
+            ).ToList();
+
+            HistoryGrid.ItemsSource = filtered;
         }
 
-        // Open Folder Button
-        private void OpenSelectedFolder_Click(object sender, RoutedEventArgs e)
+        private async void RefreshHistory_Click(object sender, RoutedEventArgs e)
         {
-            if (HistoryGrid.SelectedItem is ExperimentRecord record)
-            {
-                Process.Start("explorer.exe", record.FullPath);
-            }
+            await LoadHistoryAsync();
         }
 
-        // Double click row to open folder
-        private void HistoryGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-        {
-            OpenSelectedFolder_Click(null, null);
-        }
         #endregion
     }
 }

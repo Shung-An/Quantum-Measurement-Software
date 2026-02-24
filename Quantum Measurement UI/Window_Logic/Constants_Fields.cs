@@ -34,6 +34,9 @@ namespace Quantum_measurement_UI
         private int SelectedDiagonalIndex = 6;      // 0..7, but code will skip 7 -> use 6 instead
         private double PixelCumulativeSum = 0;      // running sum for the chart
         private long PixelCount = 0; // total number of samples in the cumulative sum
+                                     // --- State Variables (0-based internally) ---
+        private int sigR = 2, sigC = 3; // Default: User's "3,4"
+        private int anchR = 6, anchC = 7; // Default: User's "7,8"
 
         private List<double> ai5AmplitudeBuffer = new List<double>();
         private PipeClient? daqPipe;
@@ -91,8 +94,11 @@ namespace Quantum_measurement_UI
 
         // For configuration file and experiment log
         private const string IniFilePath = @"StreamThruGPU.ini";   // Path to the GageStreamGPU .ini file
-        private const string resultsBaseDirectory = @"Z:\Quantum Squeezing Project\DataFiles";   // Base directory for storing experiment logs, ## can be modified for different users
+        private const string resultsBaseDirectory = @"D:\Quantum Squeezing Project\DataFiles";   // Base directory for storing experiment logs, ## can be modified for different users
         private const string exePath = @"C:\Quantum Squeezing\Quantum-Measurement-Software\GageStreamThruGPU\x64\Debug\GageStreamThruGPU.exe"; // executable path for GageStreamThruGPU program
+        private const string exePathAlignment = @"C:\Quantum Squeezing\Quantum-Measurement-Software\GageStreamThruGPUAlignment\x64\Debug\GageStreamThruGPU.exe";
+
+
         string fftExePath = @"C:\Quantum Squeezing\Andy test\GageStreamThruGPU-FFT\x64\Debug\GageStreamThruGPU-FFT.exe";
 
 
@@ -193,6 +199,7 @@ namespace Quantum_measurement_UI
         // For experiment status and elapsed time
         private DateTime experimentStartTime;   // Stores the start time of the experiment
         private bool isExperimentRunning;       // Flag to indicate if the experiment is running
+        private bool isAlignmentRunning;
         private DispatcherTimer elapsedTimer;   // Timer to update the elapsed time display
         private int extClkValue; // Stores the external clock value from the ini file
 
@@ -239,47 +246,7 @@ namespace Quantum_measurement_UI
         }
     }
 
-    public class ExperimentRecord
-    {
-        public string Timestamp { get; set; }
-        public string Duration {  get; set; }
-        public string Sample { get; set; }
-        public string Tags { get; set; } // Comma separated string for display
-        public string Description { get; set; }
-        public string FullPath { get; set; } // Hidden path for opening the folder
-
-        // Optional: Add status (e.g., "Success", "Failed")
-
-        // --- NEW PHYSICS FIELDS ---
-        public string ShotNoiseResult { get; set; } // e.g., "5.45"
-        public string TotalPower { get; set; }      // e.g., "0.41" (P1+P2)
-        public string Sensitivity { get; set; }     // e.g., "1.79E-7"
-        public string ScanRange { get; set; }       // e.g., "5.5"
-    }
-
-    public class ExperimentMetadata
-    {
-        // --- Context ---
-        public string Timestamp { get; set; }
-        public string ExperimentName { get; set; }
-        public string UserNote { get; set; } // From your "Tag" text box
-
-        // --- Configuration (From Constants_Fields.cs) ---
-        public bool EnableFFT { get; set; }
-        public int SelectedDAQChannel { get; set; }
-        public bool UseDiagonalMode { get; set; }
-        public int SelectedDiagonalIndex { get; set; }
-        public int SelectedRow { get; set; }
-        public int SelectedColumn { get; set; }
-
-        // --- Hardware State ---
-        public string ExternalClockStatus { get; set; } // "On" or "Off"
-        public double InitialMotorPosition { get; set; } // Example
-
-        // --- Software Version ---
-        public string SoftwareVersion { get; set; } = "1.0.0";
-    }
-
+ 
     public class Motor3_Balancer // Object to balance Motor 3
     {
         private bool dir; // direction of the balance (true: up, false: down)

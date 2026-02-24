@@ -13,7 +13,7 @@ using Windows.ApplicationModel.Activation;
 namespace Quantum_measurement_UI
 {
     public partial class MainWindow : Window // Current file has logic for NiDaq and ESP Processes
-    { 
+    {
         #region Configuration and Process Management Functions 
 
         /// <summary>
@@ -23,8 +23,22 @@ namespace Quantum_measurement_UI
         {
             try
             {
-                
+
                 gageStreamProcess = System.Diagnostics.Process.Start(exePath);
+                AppendMessage("GageStreamThruGPU.exe started.");
+            }
+            catch (Exception ex)
+            {
+                AppendMessage($"Failed to start GageStreamThruGPU.exe: {ex.Message}");
+            }
+        }
+
+        public void StartGageStreamProcessForAlignment()
+        {
+            try
+            {
+
+                gageStreamProcess = System.Diagnostics.Process.Start(exePathAlignment);
                 AppendMessage("GageStreamThruGPU.exe started.");
             }
             catch (Exception ex)
@@ -140,60 +154,7 @@ namespace Quantum_measurement_UI
         }
 
 
-        private void StartESPUpdate_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (espPositionCancellationTokenSource == null || espPositionCancellationTokenSource.IsCancellationRequested)
-                {
-                    espPositionCancellationTokenSource = new CancellationTokenSource();
-                    Task.Run(() => UpdateESPPosition(espPositionCancellationTokenSource.Token));
-                    AppendMessage("Started updating ESP position.");
-                    LogExperimentEvent("Started updating ESP position.");
-                }
-                else
-                {
-                    AppendMessage("ESP position update is already running.");
-                }
-            }
-            catch (Exception ex)
-            {
-                AppendMessage($"Error starting ESP update: {ex.Message}");
-            }
-        }
-
-        private void StopESPUpdate_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                if (espPositionCancellationTokenSource != null)
-                {
-                    espPositionCancellationTokenSource.Cancel();
-                    AppendMessage("Stopped updating ESP position.");
-                    LogExperimentEvent("Stopped updating ESP position.");
-                }
-            }
-            catch (Exception ex)
-            {
-                AppendMessage($"Error stopping ESP update: {ex.Message}");
-            }
-        }
-
-        private async Task SendESPCommandAsync(string command)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(command))
-                    return;
-
-                esp300Controller.SendCommand(command.Trim());
-                await Task.Delay(100); // Small delay between commands for ESP300 to catch up
-            }
-            catch (Exception ex)
-            {
-                AppendMessage($"Error sending ESP command '{command}': {ex.Message}");
-            }
-        }
+    
 
 
         private CancellationTokenSource scanCts;
@@ -353,44 +314,6 @@ namespace Quantum_measurement_UI
         }
 
 
-        private async Task UpdateESPPosition(CancellationToken cancellationToken)
-        {
-            try
-            {
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    // Read the last sampled position; never talk to hardware here
-                    double pos = System.Threading.Volatile.Read(ref currentESPPosition);
-
-                    if (!double.IsNaN(pos))
-                    {
-                        await Dispatcher.InvokeAsync(() =>
-                        {
-                            ESPPositionValues.Add(pos);
-
-                            // keep chart light
-                            if (ESPPositionValues.Count > EspChartCapacity)
-                                ESPPositionValues.RemoveAt(0);
-                        });
-                    }
-
-                    // UI refresh cadence (no need to be faster than ~200–300 ms)
-                    await Task.Delay(250, cancellationToken);
-                }
-            }
-            catch (TaskCanceledException)
-            {
-                // normal
-            }
-            catch (Exception ex)
-            {
-                AppendMessage($"Exception in UpdateESPPosition: {ex.Message}");
-            }
-        }
-
-
-
-        private CancellationTokenSource espPositionCancellationTokenSource;
 
         /// <summary>
         /// Updates a specific key in a specific section of the .ini file.
@@ -1158,16 +1081,13 @@ namespace Quantum_measurement_UI
             }
         }
 
-
-        private void DiagonalIndexComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        // 1. Button Click Handler
+        private void ApplyCoordinatesButton_Click(object sender, RoutedEventArgs e)
         {
-            if (DiagonalIndexComboBox?.SelectedItem is ComboBoxItem item &&
-                int.TryParse(item.Content?.ToString(), out int i))
-            {
-                // i is 0..6; (7,7) is intentionally skipped
-                SetDiagonalMode(true, i);
-            }
+            // Call the parser function we defined earlier
+            ParseAndSetCoordinates(CoordinateInput.Text);
         }
+
 
 
         private void UpdateMotorVsAI5()

@@ -9,6 +9,7 @@ using QuantumSqueezingUI;
 using Quantum_measurement_UI;
 using System.Threading;
 using Microsoft.UI.Xaml.Input;
+using System.Windows.Media;
 
 namespace Quantum_measurement_UI
 {
@@ -159,8 +160,8 @@ namespace Quantum_measurement_UI
                 const double repRate = 7.6e7;                // 80 MHz
                 const double gain = 24500;                 // V/A
                 const double responseTime = 3.5e-9;        // 3.5 ns
-                const double responsivity = 0.1;           // A/W
-                const double VtoW = 0.001;                 // 1 mV = 1 µW
+                const double responsivity = 0.53;           // A/W
+                const double VtoW = 0.0001;                 // 10 mV = 1 µW
 
                 double photonEnergy_J = photonEnergy_eV * eCharge;
 
@@ -505,49 +506,122 @@ namespace Quantum_measurement_UI
         }
 
 
-        private void UpdatePixelChart()
+
+        public void ParseAndSetCoordinates(string input)
         {
-            if (corrMatrixBuffer == null || corrMatrixBuffer.Length < 64) return;
-
-            const int size = 8;
-            int anchorIdx = 7 * size + 7;
-            double anchor = corrMatrixBuffer[anchorIdx];
-
-            int r, c;
-            if (UseDiagonalMode)
+            try
             {
-                int d = SelectedDiagonalIndex;
-                if (d < 0) d = 0;
-                if (d > 7) d = 7;
-                if (d == 7) d = 6;
-                r = d; c = d;
+                // 1. Normalize delimiters: replace dashes, semicolons, spaces with commas
+                string cleaned = input.Replace("-", ",").Replace(";", ",").Replace(" ", ",");
+
+                // 2. Split and parse
+                string[] parts = cleaned.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+
+                if (parts.Length >= 4)
+                {
+                    // Parse User Input (1-based) and convert to Internal (0-based)
+                    int r1 = int.Parse(parts[0]) - 1;
+                    int c1 = int.Parse(parts[1]) - 1;
+                    int r2 = int.Parse(parts[2]) - 1;
+                    int c2 = int.Parse(parts[3]) - 1;
+
+                    // Clamp to safe range (0-7)
+                    r1 = Math.Max(0, Math.Min(7, r1));
+                    c1 = Math.Max(0, Math.Min(7, c1));
+                    r2 = Math.Max(0, Math.Min(7, r2));
+                    c2 = Math.Max(0, Math.Min(7, c2));
+
+                    // Apply to State Variables
+                    sigR = r1; sigC = c1;
+                    anchR = r2; anchC = c2;
+
+                    // RESET CHART
+                    PixelCount = 0;
+                    PixelCumulativeSum = 0;
+                    PixelValues.Clear();
+
+                    // --- FEEDBACK: SUCCESS ---
+                    CoordinateInput.Background = Brushes.LightGreen;
+                    // Optional: Show what was set in the UI
+                    SelectedPixelValue.Text = $"Set: ({sigR + 1},{sigC + 1}) vs ({anchR + 1},{anchC + 1})";
+                }
+                else
+                {
+                    // --- FEEDBACK: INCOMPLETE DATA ---
+                    CoordinateInput.Background = Brushes.LightPink;
+                    MessageBox.Show("Format Error: Please provide 4 numbers.\nExample: 3,4 - 7,8");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                r = Math.Max(0, Math.Min(size - 1, selectedRow));
-                c = Math.Max(0, Math.Min(size - 1, selectedColumn));
-                if (r == 7 && c == 7) { r = 6; c = 6; }
+                // --- FEEDBACK: PARSING ERROR ---
+                CoordinateInput.Background = Brushes.LightPink;
+                MessageBox.Show($"Error parsing coordinates: {ex.Message}");
             }
-
-            int idx = r * size + c;
-            double diff = (corrMatrixBuffer[idx] - anchor)*0.24*0.24/32768/32768;
-
-            // Increment count and sum
-            PixelCount++;
-            PixelCumulativeSum += diff;
-
-            // Show both current diff and count
-            SelectedPixelValue.Text = $"{diff:F2}  (Δ=({r},{c})-(7,7)) | Count: {PixelCount}";
-
-            // Push cumulative sum to chart
-            PixelValues.Add(PixelCumulativeSum);
-
-            // Keep chart display to last 100 points, but DO NOT reset sum or count
-            if (PixelValues.Count > 100)
-                PixelValues.RemoveAt(0);
         }
 
 
+        private void UpdatePixelChart()
+        {
+            // ---------------------------------------------------------
+            // 1. SAFETY & VARIANCE GATING (Scaled)
+            // ---------------------------------------------------------
+            if (corrMatrixBuffer == null || corrMatrixBuffer.Length < 64) return;
+
+            // Scaling: (0.24^2) / (32768^2)
+            const double ScaleFactor = 0.0576 / 1073741824.0;
+            const int len = 64;
+
+            // Calculate Global Mean (Scaled)
+            double sumAll = 0;
+            for (int i = 0; i < len; i++) sumAll += corrMatrixBuffer[i] * ScaleFactor;
+            double meanGlobal = sumAll / len;
+
+            // Calculate Global Variance (Scaled)
+            double sumSqDiff = 0;
+            for (int i = 0; i < len; i++)
+            {
+                double diff = (corrMatrixBuffer[i] * ScaleFactor) - meanGlobal;
+                sumSqDiff += diff * diff;
+            }
+            double variance = sumSqDiff / len;
+
+            // C. Calculate RMS (Standard Deviation)
+            double frame_rms = Math.Sqrt(variance);
+            // Threshold Check (User experience: 1e-8)
+            if (frame_rms < 1e-8) return;
+
+            // ---------------------------------------------------------
+            // 2. POINT-TO-POINT CALCULATION
+            // ---------------------------------------------------------
+            const int size = 8;
+
+            // Get indices from the variables set by the Parser
+            int sigIdx = sigR * size + sigC;
+            int anchorIdx = anchR * size + anchC;
+
+            // Fetch & Scale
+            double valSignal = corrMatrixBuffer[sigIdx] * ScaleFactor;
+            double valAnchor = corrMatrixBuffer[anchorIdx] * ScaleFactor;
+
+            // Differential
+            double diffVal = valSignal - valAnchor;
+
+            // ---------------------------------------------------------
+            // 3. UPDATE CHART UI
+            // ---------------------------------------------------------
+            PixelCount++;
+            PixelCumulativeSum += diffVal;
+
+            // Display formatted for humans (1-based indexing)
+            SelectedPixelValue.Text = $"{diffVal:F2} (({sigR + 1},{sigC + 1})-({anchR + 1},{anchC + 1})) | Cnt: {PixelCount}";
+
+            PixelValues.Add(PixelCumulativeSum);
+
+            // Keep buffer small
+            if (PixelValues.Count > 100)
+                PixelValues.RemoveAt(0);
+        }
 
         #endregion
     }
