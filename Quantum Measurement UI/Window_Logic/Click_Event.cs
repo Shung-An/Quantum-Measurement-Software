@@ -869,6 +869,70 @@ namespace Quantum_measurement_UI
             }
         }
 
+        /// <summary>
+        /// Resets the Matrix Balance Chart data, cumulative sums, frame counters, and UI text.
+        /// </summary>
+        private void ResetMatrixBalanceChart_Click(object sender, RoutedEventArgs e)
+        {
+            // Run on UI thread to safely update collections and UI
+            Dispatcher.Invoke(() =>
+            {
+                // 1. Reset the raw bar chart values
+                if (MatrixChartValues != null)
+                {
+                    MatrixChartValues.Clear();
+                    for (int i = 0; i < 49; i++)
+                    {
+                        MatrixChartValues.Add(0.0);
+                    }
+                }
+
+                // 2. Reset the Table Data and the History for the Plot
+                if (MatrixTableData != null)
+                {
+                    foreach (var item in MatrixTableData)
+                    {
+                        item.Value = 0;
+                        item.PhysicalValue = 0;
+                        item.History.Clear(); // This clears the 100-point plot
+                    }
+                }
+
+                // 3. Clear the active trend plot series
+                SelectedTrendSeries?.Clear();
+
+                // 4. Reset internal cumulative sums and counters
+                if (Cumulative49Channels != null)
+                {
+                    Array.Clear(Cumulative49Channels, 0, Cumulative49Channels.Length);
+                }
+
+                TotalFramesReceived = 0;
+                TotalFramesSkipped = 0;
+
+                // 5. Reset UI text
+                SkippedFramesText.Text = "Skipped: 0 / 0 (0.00%) | RMS: 0.00E+00";
+
+                AppendMessage("Matrix Balance and History Plot reset.");
+            });
+        }
+        /// <summary>
+        /// Resets the Integrated Column chart and the >9000 rejection counters.
+        /// </summary>
+        private void ResetIntegralChart_Click(object sender, RoutedEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                lastProcessedFrameCount = 0; // Reset the sync tracker
+                TotalIntegralFrames = 0;
+
+                IntegratedDataHistory?.Clear();
+                IntegralRejectionStatsText.Text = "System Skip Rate: 0 / 0 (0.00%)";
+
+                AppendMessage("Integral Chart synchronized and reset.");
+            });
+        }
+
         #endregion
     }
 }

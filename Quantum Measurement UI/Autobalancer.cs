@@ -159,65 +159,98 @@ namespace Quantum_measurement_UI
                 mainWindow.LogExperimentEvent("[AutoBalance] Coarse tuning session started.");
             });
 
-            const double tolerance = 0.005; // volts
-            const int maxStep = 50;        // max motor steps in one move
+            const double tolerance = 0.005;  // volts
+            const int maxStep = 50;          // max motor steps in one move
             const double coarseFactor = 300; // volts-to-steps for large errors
-            const double fineFactor = 20;  // volts-to-steps for small errors
+            const double fineFactor = 20;    // volts-to-steps for small errors
+
+            // NEW: How many samples to average to smooth out electrical noise
+            const int sampleSize = 10;
 
             while (!cancellationToken.IsCancellationRequested && isTimeToBalance())
             {
-                // Guard against empty DAQ buffers
-                if (mainWindow.DAQChannel1Values.Count == 0 ||
-                    mainWindow.DAQChannel2Values.Count == 0 ||
-                    mainWindow.DAQChannel3Values.Count == 0 ||
-                    mainWindow.DAQChannel4Values.Count == 0)
+                // Guard against empty or insufficiently filled DAQ buffers
+                if (mainWindow.DAQChannel1Values.Count < sampleSize ||
+                    mainWindow.DAQChannel2Values.Count < sampleSize ||
+                    mainWindow.DAQChannel3Values.Count < sampleSize ||
+                    mainWindow.DAQChannel4Values.Count < sampleSize)
                 {
                     await Task.Delay(100, cancellationToken);
                     continue;
                 }
-                // === Step 1: Calculate voltage differences ===
-                double diffM1 = mainWindow.DAQChannel1Values[^1] - mainWindow.DAQChannel2Values[^1];
-                double diffM2 = mainWindow.DAQChannel3Values[^1] - mainWindow.DAQChannel4Values[^1];
+
+                // === Step 1: Calculate smoothed voltage differences ===
+                // Averages the last N values to reject high-frequency noise
+                double ch1Avg = mainWindow.DAQChannel1Values.TakeLast(sampleSize).Average();
+                double ch2Avg = mainWindow.DAQChannel2Values.TakeLast(sampleSize).Average();
+                double ch3Avg = mainWindow.DAQChannel3Values.TakeLast(sampleSize).Average();
+                double ch4Avg = mainWindow.DAQChannel4Values.TakeLast(sampleSize).Average();
+
+                double diffM1 = ch1Avg - ch2Avg;
+                double diffM2 = ch3Avg - ch4Avg;
+
+                bool movedMotor = false;
 
                 // === Step 2: Motor 1 ===
-                // Motor 1
                 if (Math.Abs(diffM1) > tolerance)
                 {
                     double factor = Math.Abs(diffM1) > 0.01 ? coarseFactor : fineFactor;
-                    int step1 = (int)Math.Min(maxStep, Math.Abs(diffM1) * factor);
+
+                    // FIX: Use Math.Round instead of truncation
+                    int step1 = (int)Math.Round(Math.Min(maxStep, Math.Abs(diffM1) * factor));
+
+                    // FIX: Ensure we take at least 1 step if we are outside tolerance
+                    if (step1 == 0) step1 = 1;
+
                     int dir1 = diffM1 > 0 ? 1 : -1;
 
-                    dispatcher.Invoke(() =>
-                    {
-                        mainWindow.PowerDiffCh1.Text = diffM1.ToString("F4");
-                    }); 
-                    motorController.CheckForErrors(); // skip or throw if error detected
+                    dispatcher.Invoke(() => mainWindow.PowerDiffCh1.Text = diffM1.ToString("F4"));
+                    motorController.CheckForErrors();
+
                     await SafeMoveMotor(1, step1 * dir1, cancellationToken);
                     await WaitForMotorReady(1, cancellationToken);
+                    movedMotor = false; // Wait, actually set to true
+                    movedMotor = true;
                 }
 
-                // Motor 2
+                // === Step 3: Motor 2 ===
                 if (Math.Abs(diffM2) > tolerance)
                 {
                     double factor = Math.Abs(diffM2) > 0.01 ? coarseFactor : fineFactor;
-                    int step2 = (int)Math.Min(maxStep, Math.Abs(diffM2) * factor);
+
+                    int step2 = (int)Math.Round(Math.Min(maxStep, Math.Abs(diffM2) * factor));
+                    if (step2 == 0) step2 = 1;
+
                     int dir2 = diffM2 > 0 ? -1 : 1;
-                    dispatcher.Invoke(() =>
-                    {
-                        mainWindow.PowerDiffCh2.Text = diffM2.ToString("F4");
-                    });
-                    motorController.CheckForErrors(); // skip or throw if error detected
+
+                    dispatcher.Invoke(() => mainWindow.PowerDiffCh2.Text = diffM2.ToString("F4"));
+                    motorController.CheckForErrors();
+
                     await SafeMoveMotor(2, step2 * dir2, cancellationToken);
                     await WaitForMotorReady(2, cancellationToken);
+                    movedMotor = true;
                 }
 
-                await Task.Delay(100, cancellationToken);
+                // === Step 4: Settling Time ===
+                // If we moved a motor, we must wait long enough for the DAQ to capture the physical change
+                if (movedMotor)
+                {
+                    // Adjust this delay based on your DAQ update rate and physical settling time
+                    await Task.Delay(250, cancellationToken);
+                }
+                else
+                {
+                    // If balanced, just poll gently
+                    await Task.Delay(100, cancellationToken);
+                }
             }
+
             dispatcher.Invoke(() =>
             {
                 mainWindow.LogExperimentEvent("[AutoBalance] Coarse tuning session ended.");
             });
         }
+
 
         private async Task SafeMoveMotor(int motorNumber, int steps, CancellationToken token)
         {

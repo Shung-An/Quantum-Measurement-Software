@@ -55,7 +55,7 @@ namespace Quantum_measurement_UI
         public bool StopMotion(string deviceKey, int motorNumber)
         {
 
-            bool status = cmdLib.StopMotion(deviceKey, motorNumber);
+            bool status = cmdLib.AbortMotion(deviceKey);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not stop the motor.");

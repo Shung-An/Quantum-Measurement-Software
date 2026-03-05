@@ -9,6 +9,8 @@ using QuantumSqueezingUI;
 using Quantum_measurement_UI;
 using Windows.Networking.PushNotifications;
 using Microsoft.UI.Xaml.Controls;
+using LiveCharts.Configurations;
+using System.Collections.ObjectModel;
 
 namespace Quantum_measurement_UI
 {
@@ -29,14 +31,91 @@ namespace Quantum_measurement_UI
         public ChartValues<double> AI5HistogramValues { get; set; }
 
 
-        // --- Pixel chart diagonal mode state ---
-        private bool UseDiagonalMode = true;        // set false to use selectedRow/selectedColumn as before
-        private int SelectedDiagonalIndex = 6;      // 0..7, but code will skip 7 -> use 6 instead
+
         private double PixelCumulativeSum = 0;      // running sum for the chart
         private long PixelCount = 0; // total number of samples in the cumulative sum
-                                     // --- State Variables (0-based internally) ---
-        private int sigR = 2, sigC = 3; // Default: User's "3,4"
-        private int anchR = 6, anchC = 7; // Default: User's "7,8"
+
+        // Buffers to hold recent samples for RMS calculation (per channel)
+        private List<double>[] channelRmsBuffers = new List<double>[64];
+
+
+
+        private const int RmsWindowSize = 10000;  // number of samples used for RMS (~0.1–0.5 s at typical rates)
+
+        // In constructor or initialization method:
+        private void InitializeRmsBuffers()
+        {
+            for (int i = 0; i < 64; i++)
+            {
+                channelRmsBuffers[i] = new List<double>(RmsWindowSize + 10);
+            }
+        }
+
+        public ChartValues<double> RmsValues { get; } = new ChartValues<double>(Enumerable.Repeat(0.0, 64));
+        public string[] ChannelLabels { get; } = Enumerable.Range(1, 64).Select(i => $"Ch{i}").ToArray();
+        public Func<double, string> RmsLabelFormatter => value => value.ToString("F4");
+        
+        // Array to hold the latest snapshot of the 49 reduced channels for the Bar Chart
+        public double[] current49ChannelValues = new double[49];
+
+        // The 49 pairs used to reduce the 8x8 matrix.
+        // Format: { row1, col1, row2, col2 } (1-based indexing as provided)
+        private static readonly int[,] ReductionPairs = new int[49, 4]
+        {
+            {1, 1, 8, 8}, {1, 2, 7, 8}, {1, 3, 6, 8}, {1, 4, 5, 8}, {1, 5, 4, 8}, {1, 6, 3, 8}, {1, 7, 2, 8},
+            {2, 2, 8, 8}, {2, 3, 7, 8}, {2, 4, 6, 8}, {2, 5, 5, 8}, {2, 6, 4, 8}, {2, 7, 3, 8},
+            {3, 3, 8, 8}, {3, 4, 7, 8}, {3, 5, 6, 8}, {3, 6, 5, 8}, {3, 7, 4, 8},
+            {4, 4, 8, 8}, {4, 5, 7, 8}, {4, 6, 6, 8}, {4, 7, 5, 8},
+            {5, 5, 8, 8}, {5, 6, 7, 8}, {5, 7, 6, 8},
+            {6, 6, 8, 8}, {6, 7, 7, 8},
+            {7, 7, 8, 8},
+            {2, 1, 8, 7}, {3, 1, 8, 6}, {4, 1, 8, 5}, {5, 1, 8, 4}, {6, 1, 8, 3}, {7, 1, 8, 2},
+            {3, 2, 8, 7}, {4, 2, 8, 6}, {5, 2, 8, 5}, {6, 2, 8, 4}, {7, 2, 8, 3},
+            {4, 3, 8, 7}, {5, 3, 8, 6}, {6, 3, 8, 5}, {7, 3, 8, 4},
+            {5, 4, 8, 7}, {6, 4, 8, 6}, {7, 4, 8, 5},
+            {6, 5, 8, 7}, {7, 5, 8, 6},
+            {7, 6, 8, 7}
+        };
+        // Correct (Properties)
+        public ChartValues<double> MatrixChartValues { get; set; } = new ChartValues<double>();
+        public IList<string> MatrixChartLabels { get; set; } = Enumerable.Range(1, 49).Select(i => i.ToString()).ToList();
+        public CartesianMapper<double> BalanceMapper { get; set; }
+        // Persistent array to hold the cumulative sum of the 49 channels
+        public double[] Cumulative49Channels = new double[49];
+
+        // Trackers for skipped frames
+        public long TotalFramesReceived = 0;
+        public long TotalFramesSkipped = 0;
+
+        public class MatrixBalanceItem : System.ComponentModel.INotifyPropertyChanged
+        {
+            private double _value;
+            private double _physValue;
+
+            public int Channel { get; set; }
+            public double Value { get => _value; set { _value = value; OnPropertyChanged(nameof(Value)); OnPropertyChanged(nameof(Status)); } }
+            public double PhysicalValue { get => _physValue; set { _physValue = value; OnPropertyChanged(nameof(PhysicalValue)); } }
+
+            // This stores the last 100 points for the trend plot
+            public ChartValues<double> History { get; set; } = new ChartValues<double>();
+
+            public string Status => Math.Abs(_value) > 0.005 ? "High" : "Balanced";
+
+            public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+            protected void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(name));
+        }
+
+        // In your MainWindow class fields:
+        public ObservableCollection<MatrixBalanceItem> MatrixTableData { get; set; } = new ObservableCollection<MatrixBalanceItem>();
+        public SeriesCollection SelectedTrendSeries { get; set; } = new SeriesCollection();
+        private DispatcherTimer historyTimer;
+
+
+        // Add this under your other private fields
+        private double conversionFactor_V2_per_rad2 = 1.0;
+        // Add this with your other public properties in MainWindow
+        public ChartValues<double> IntegratedDataHistory { get; set; } = new ChartValues<double>();
+
 
         private List<double> ai5AmplitudeBuffer = new List<double>();
         private PipeClient? daqPipe;
@@ -186,6 +265,11 @@ namespace Quantum_measurement_UI
         // For experiment log
         private string experimentLogDirectory;      // Stores the directory name for the experiment log
 
+
+        private readonly object _acceptedLock = new object();
+        private double[]? _lastAccepted64Scaled;     // already scaled, already passed RMS threshold
+        private long _lastAcceptedValidFrameIndex;   // validFrames value for that snapshot
+
         private StreamWriter experimentLogWriter;
         private StreamWriter motorMetricLogWriter;
         private StreamWriter sensitivityLogWriter;
@@ -208,7 +292,10 @@ namespace Quantum_measurement_UI
 
         private bool TimeToBalance = true; // Flag to indicate if it's time to balance the motor
         private bool SignalDropped = false; // Flag to indicate if the signal has dropped
-        
+
+        private long TotalIntegralFrames = 0;
+        private long RejectedIntegralFrames = 0;
+
         #endregion
     }
     

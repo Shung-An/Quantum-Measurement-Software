@@ -37,8 +37,11 @@ namespace Quantum_measurement_UI
             // Initialize charts
             InitializeSignalChart();         // Initialize the signal chart data                                          
             InitializeHeatValues();         // Initialize heatmap values (8x8 grid)
-            InitializePixelChart();         // Initialize pixel chart of selected pixel of cross correlation matrix over time
+            InitializeSpinNoiseMatrix();         // Initialize pixel chart of selected pixel of cross correlation matrix over time
+            InitializeRmsValues();         // Initialize RMS buffers
             InitializeDAQCharts();         // Initialize DAQ charts
+            InitializeAlignmentChart();         // Initialize alignment chart
+
                                            // Initialize Autobalancer
             autobalancer = new Autobalancer(
                 motorController,

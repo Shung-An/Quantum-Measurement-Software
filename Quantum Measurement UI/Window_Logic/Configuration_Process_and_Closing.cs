@@ -1081,13 +1081,23 @@ namespace Quantum_measurement_UI
             }
         }
 
-        // 1. Button Click Handler
-        private void ApplyCoordinatesButton_Click(object sender, RoutedEventArgs e)
-        {
-            // Call the parser function we defined earlier
-            ParseAndSetCoordinates(CoordinateInput.Text);
-        }
 
+        // The event handler that updates the chart when you click rows:
+        private void MatrixBalanceTable_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            SelectedTrendSeries.Clear();
+            foreach (var item in MatrixBalanceTable.SelectedItems.Cast<MatrixBalanceItem>())
+            {
+                SelectedTrendSeries.Add(new LineSeries
+                {
+                    Title = $"Ch {item.Channel}",
+                    Values = item.History,
+                    PointGeometry = null,
+                    StrokeThickness = 2,
+                    Fill = Brushes.Transparent
+                });
+            }
+        }
 
 
         private void UpdateMotorVsAI5()

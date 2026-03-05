@@ -114,7 +114,8 @@ namespace Quantum_measurement_UI
                         // Update the charts with new data
                         Dispatcher.Invoke(() => UpdateChart());         // update the SignalChart in the UI thread
                         Dispatcher.Invoke(() => UpdateHeatmap());       // update the Heatmap in the UI thread
-                        Dispatcher.Invoke(() => UpdatePixelChart());    // update the PixelChart in the UI thread
+                        Dispatcher.Invoke(() => Update49ChannelBarChart());    // update the PixelChart in the UI thread
+                        Dispatcher.Invoke(() => UpdateAllChannelsMSE()); // update the motor position in the UI thread
                     }
 
                     await Task.Delay((int)UpdateInterval, cancellationToken);
@@ -197,7 +198,11 @@ namespace Quantum_measurement_UI
                 double conversion1 = 2 * N1 * sensitivity;
                 double conversion2 = 2 * N2 * sensitivity;
                 double conversionFactor_V2_per_rad2 = conversion1 * conversion2;
-
+                if (this.conversionFactor_V2_per_rad2 == 1)
+                {
+                    this.conversionFactor_V2_per_rad2 = conversion1 * conversion2;
+                    AppendMessage($"Conversion factor LOCKED at: {this.conversionFactor_V2_per_rad2:E2} V²/rad²");
+                }
                 // === Step 8: Convert to rad²/√Hz ===
                 double noise_rad2_sqrtHz = shotNoiseSignal_V2_sqrtHz / conversionFactor_V2_per_rad2;
                 double noise_μrad2_sqrtHz = noise_rad2_sqrtHz * 1e12;
@@ -465,163 +470,200 @@ namespace Quantum_measurement_UI
         }
 
 
-        /*        /// <summary>
-                /// Updates the pixel chart with the selected pixel value over time.
-                /// </summary>
-                private void UpdatePixelChart()
+
+        /// <summary>
+        /// Reduces 64 raw DAQ channels into 49 differential signals based on the 8x8 matrix topology.
+        /// </summary>
+        private double[] ReduceTo49Channels(double[] raw64Channels)
+        {
+            if (raw64Channels == null || raw64Channels.Length < 64)
+                return new double[49];
+
+            double[] reduced49 = new double[49];
+
+            for (int i = 0; i < 49; i++)
+            {
+                // Convert 1-based matrix coordinates to 0-based array index logic
+                int r1 = ReductionPairs[i, 0] - 1;
+                int c1 = ReductionPairs[i, 1] - 1;
+                int r2 = ReductionPairs[i, 2] - 1;
+                int c2 = ReductionPairs[i, 3] - 1;
+
+                // index = (row * width) + col
+                int index1 = (r1 * 8) + c1;
+                int index2 = (r2 * 8) + c2;
+
+                reduced49[i] = raw64Channels[index1] - raw64Channels[index2];
+            }
+
+            return reduced49;
+        }
+
+        /// <summary>
+        /// Retrieves the latest 64 channels from the correlation matrix, scaled properly.
+        /// Applies the strict 1e-8 RMS threshold check to ignore noise/empty frames.
+        /// </summary>
+        private double[]? GetLatest64Channels(out double frame_rms)
+        {
+            // 0. Initialize the out parameter IMMEDIATELY to prevent CS0177
+            frame_rms = 0.0;
+
+            const double ScaleFactor = 0.0576 / 1073741824.0;
+
+            // 1. Calculate Mean and Variance for the threshold check
+            double sum = 0;
+            for (int i = 0; i < 64; i++)
+            {
+                sum += corrMatrixBuffer[i] * ScaleFactor;
+            }
+            double mean = sum / 64.0;
+
+            double sqSum = 0;
+            for (int i = 0; i < 64; i++)
+            {
+                sqSum += Math.Pow(corrMatrixBuffer[i] * ScaleFactor - mean, 2);
+            }
+            double variance = sqSum / 64.0;
+
+            // 2. RMS (Standard Deviation) calculation
+            // FIX: REMOVED THE WORD 'double' HERE!
+            frame_rms = Math.Sqrt(variance);
+
+            // 3. The Crucial Threshold Check (User experience: 1e-8)
+            if (frame_rms < 1e-8)
+            {
+                return null; // Skip this frame entirely!
+            }
+
+            // 4. Fetch & Scale the 64 channels
+            double[] current64 = new double[64];
+            for (int i = 0; i < 64; i++)
+            {
+                current64[i] = corrMatrixBuffer[i] * ScaleFactor;
+            }
+
+            return current64;
+        }
+        /// <summary>
+        /// Updates the 49-Channel Bar Chart UI with Cumulative Sums and tracks skipped frames.
+        /// </summary>
+        private void Update49ChannelBarChart()
+        {
+            TotalFramesReceived++;
+            double[]? current64 = GetLatest64Channels(out double currentRms);
+            if (current64 == null) { TotalFramesSkipped++; return; }
+
+            long validFrames = TotalFramesReceived - TotalFramesSkipped;
+
+            // ✅ Snapshot the ACCEPTED (threshold-passed) scaled frame for other charts (integral, etc.)
+            lock (_acceptedLock)
+            {
+                _lastAccepted64Scaled = current64;           // already scaled by ScaleFactor
+                _lastAcceptedValidFrameIndex = validFrames;  // ties snapshot to validFrames
+            }
+
+            double[] reduced49 = ReduceTo49Channels(current64);
+
+            Dispatcher.Invoke(() =>
+            {
+                if (validFrames <= 0) return;
+
+                for (int i = 0; i < 49; i++)
                 {
-                    int index = selectedRow * 8 + selectedColumn;       // Row major order
-                    double selectedValue = corrMatrixBuffer[index];
+                    Cumulative49Channels[i] += reduced49[i];
+                    double avgV2 = Cumulative49Channels[i] / validFrames;
 
-                    // Update the SelectedPixelValue TextBox
-                    SelectedPixelValue.Text = selectedValue.ToString("F2");
+                    double physValue = (avgV2 / conversionFactor_V2_per_rad2) * 1e12;
 
-                    // Add the new value to the PixelValues series
-                    PixelValues.Add(selectedValue);
+                    MatrixTableData[i].Value = avgV2;
+                    MatrixTableData[i].PhysicalValue = physValue;
+                }
+            });
 
-                    // Keep the series length manageable
-                    if (PixelValues.Count > 100) // Keep last 100 points
-                    {
-                        PixelValues.RemoveAt(0);
-                    }
-                }*/
+            UpdateSkipStatsUI(currentRms);
+        }
 
 
         /// <summary>
-        /// Updates the pixel chart. In diagonal mode, picks (i,i) (i != 7),
-        /// subtracts (7,7) and plots the cumulative sum over time.
-        /// Otherwise, uses the selected (row,col) and still subtracts (7,7),
-        /// plotting the cumulative sum.
+        /// Helper to calculate and display the skipped frame percentage.
         /// </summary>
-        private void SetDiagonalMode(bool enabled, int diagonalIndex = 6)
+        private void UpdateSkipStatsUI(double rmsValue)
         {
-            UseDiagonalMode = enabled;
-            SelectedDiagonalIndex = diagonalIndex == 7 ? 6 : Math.Max(0, Math.Min(7, diagonalIndex));
+            if (TotalFramesReceived == 0) return;
 
-            PixelCumulativeSum = 0;
-            PixelCount = 0;
+            long valid = TotalFramesReceived - TotalFramesSkipped;
+            double percentSkipped = (double)TotalFramesSkipped / TotalFramesReceived * 100.0;
 
-            if (PixelValues != null)
-                PixelValues.Clear();
+            SkippedFramesText.Text =
+                $"Skipped: {TotalFramesSkipped} / {TotalFramesReceived} ({percentSkipped:F2}%)  •  " +
+                $"Valid frames: {valid}  •  RMS: {rmsValue:E2}";
         }
 
 
 
-        public void ParseAndSetCoordinates(string input)
+        private void UpdateAllChannelsMSE()
         {
-            try
+            double[] latest64Channels = corrMatrixBuffer;  // assume this is your latest 64-channel data
+
+            // 1. Add newest sample to each rolling buffer
+            for (int ch = 0; ch < 64; ch++)
             {
-                // 1. Normalize delimiters: replace dashes, semicolons, spaces with commas
-                string cleaned = input.Replace("-", ",").Replace(";", ",").Replace(" ", ",");
-
-                // 2. Split and parse
-                string[] parts = cleaned.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-
-                if (parts.Length >= 4)
+                var buf = channelRmsBuffers[ch];
+                if (buf == null)
                 {
-                    // Parse User Input (1-based) and convert to Internal (0-based)
-                    int r1 = int.Parse(parts[0]) - 1;
-                    int c1 = int.Parse(parts[1]) - 1;
-                    int r2 = int.Parse(parts[2]) - 1;
-                    int c2 = int.Parse(parts[3]) - 1;
-
-                    // Clamp to safe range (0-7)
-                    r1 = Math.Max(0, Math.Min(7, r1));
-                    c1 = Math.Max(0, Math.Min(7, c1));
-                    r2 = Math.Max(0, Math.Min(7, r2));
-                    c2 = Math.Max(0, Math.Min(7, c2));
-
-                    // Apply to State Variables
-                    sigR = r1; sigC = c1;
-                    anchR = r2; anchC = c2;
-
-                    // RESET CHART
-                    PixelCount = 0;
-                    PixelCumulativeSum = 0;
-                    PixelValues.Clear();
-
-                    // --- FEEDBACK: SUCCESS ---
-                    CoordinateInput.Background = Brushes.LightGreen;
-                    // Optional: Show what was set in the UI
-                    SelectedPixelValue.Text = $"Set: ({sigR + 1},{sigC + 1}) vs ({anchR + 1},{anchC + 1})";
+                    channelRmsBuffers[ch] = new List<double>(RmsWindowSize + 10);
+                    buf = channelRmsBuffers[ch];
                 }
-                else
+
+                buf.Add(latest64Channels[ch]);
+
+                // Keep fixed window size
+                if (buf.Count > RmsWindowSize)
+                    buf.RemoveAt(0);
+            }
+
+            // 2. Compute MSE for each channel (against its own running mean)
+            Dispatcher.Invoke(() =>
+            {
+                for (int ch = 0; ch < 64; ch++)
                 {
-                    // --- FEEDBACK: INCOMPLETE DATA ---
-                    CoordinateInput.Background = Brushes.LightPink;
-                    MessageBox.Show("Format Error: Please provide 4 numbers.\nExample: 3,4 - 7,8");
+                    var buf = channelRmsBuffers[ch];
+                    if (buf == null || buf.Count < 10)
+                    {
+                        RmsValues[ch] = 0.0;  // or use a different ChartValues if you want separate MSE display
+                        continue;
+                    }
+
+                    // Running mean (simple average over window)
+                    double mean = buf.Average();
+
+                    // Mean Squared Error = average of (x - mean)²
+                    double sumSquaredDiff = buf.Sum(x => (x - mean) * (x - mean));
+                    double mse = sumSquaredDiff / buf.Count;
+
+                    RmsValues[ch] = mse;
+                }
+
+                // Optional: force chart redraw
+                RmsPerChannelChart?.Update(true, true);
+            });
+        }
+
+        private void HistoryTimer_Tick(object sender, EventArgs e)
+        {
+            // Capture the current physical values for all 49 channels into their history
+            foreach (var item in MatrixTableData)
+            {
+                item.History.Add(item.PhysicalValue);
+
+                // Limit to 100 points
+                if (item.History.Count > 100)
+                {
+                    item.History.RemoveAt(0);
                 }
             }
-            catch (Exception ex)
-            {
-                // --- FEEDBACK: PARSING ERROR ---
-                CoordinateInput.Background = Brushes.LightPink;
-                MessageBox.Show($"Error parsing coordinates: {ex.Message}");
-            }
         }
 
-
-        private void UpdatePixelChart()
-        {
-            // ---------------------------------------------------------
-            // 1. SAFETY & VARIANCE GATING (Scaled)
-            // ---------------------------------------------------------
-            if (corrMatrixBuffer == null || corrMatrixBuffer.Length < 64) return;
-
-            // Scaling: (0.24^2) / (32768^2)
-            const double ScaleFactor = 0.0576 / 1073741824.0;
-            const int len = 64;
-
-            // Calculate Global Mean (Scaled)
-            double sumAll = 0;
-            for (int i = 0; i < len; i++) sumAll += corrMatrixBuffer[i] * ScaleFactor;
-            double meanGlobal = sumAll / len;
-
-            // Calculate Global Variance (Scaled)
-            double sumSqDiff = 0;
-            for (int i = 0; i < len; i++)
-            {
-                double diff = (corrMatrixBuffer[i] * ScaleFactor) - meanGlobal;
-                sumSqDiff += diff * diff;
-            }
-            double variance = sumSqDiff / len;
-
-            // C. Calculate RMS (Standard Deviation)
-            double frame_rms = Math.Sqrt(variance);
-            // Threshold Check (User experience: 1e-8)
-            if (frame_rms < 1e-8) return;
-
-            // ---------------------------------------------------------
-            // 2. POINT-TO-POINT CALCULATION
-            // ---------------------------------------------------------
-            const int size = 8;
-
-            // Get indices from the variables set by the Parser
-            int sigIdx = sigR * size + sigC;
-            int anchorIdx = anchR * size + anchC;
-
-            // Fetch & Scale
-            double valSignal = corrMatrixBuffer[sigIdx] * ScaleFactor;
-            double valAnchor = corrMatrixBuffer[anchorIdx] * ScaleFactor;
-
-            // Differential
-            double diffVal = valSignal - valAnchor;
-
-            // ---------------------------------------------------------
-            // 3. UPDATE CHART UI
-            // ---------------------------------------------------------
-            PixelCount++;
-            PixelCumulativeSum += diffVal;
-
-            // Display formatted for humans (1-based indexing)
-            SelectedPixelValue.Text = $"{diffVal:F2} (({sigR + 1},{sigC + 1})-({anchR + 1},{anchC + 1})) | Cnt: {PixelCount}";
-
-            PixelValues.Add(PixelCumulativeSum);
-
-            // Keep buffer small
-            if (PixelValues.Count > 100)
-                PixelValues.RemoveAt(0);
-        }
 
         #endregion
     }

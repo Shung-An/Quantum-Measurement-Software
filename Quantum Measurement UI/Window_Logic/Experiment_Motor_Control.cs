@@ -206,9 +206,14 @@ namespace Quantum_measurement_UI
 
                     heatValues?.Clear();
 
-                    PixelValues?.Clear();
-                    PixelCumulativeSum = 0;
-                    PixelCount = 0;
+                    MatrixChartValues?.Clear();
+                    for (int i = 0; i < 49; i++)
+                        MatrixChartValues?.Add(0.0);
+                    TotalFramesReceived = 0;
+                    TotalFramesSkipped = 0;
+                    RmsValues?.Clear();
+                    for (int i = 0; i < 64; i++)
+                        RmsValues?.Add(0.0);
 
                     autobalancer?.MotorPositionValues1?.Clear();
                     autobalancer?.MotorPositionValues2?.Clear();
@@ -216,7 +221,6 @@ namespace Quantum_measurement_UI
                     autobalancer?.MetricValuesB?.Clear();
 
 
-                    SelectedPixelValue.Text = "0.00";
                     ElapsedTimeText.Text = "00:00:00";
                 });
                 await RunMatlabAnalysisAsync(fullResultPath);
@@ -272,8 +276,8 @@ namespace Quantum_measurement_UI
 
                 // --- C. Logging Setup (Simplified for Alignment) ---
                 // Create a temporary or specific alignment directory so we don't pollute experiment data
-                string dateStr = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                experimentLogDirectory = $"Alignment_Data\\{dateStr}";
+                string dateStr = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                experimentLogDirectory = $"{dateStr}";
 
                 // Ensure directory exists
                 string fullAlignmentPath = System.IO.Path.Combine(resultsBaseDirectory, experimentLogDirectory);
@@ -281,11 +285,13 @@ namespace Quantum_measurement_UI
 
                 // Initialize basic log just for errors/events
                 await AsyncInitializeExperimentLog();
+               
+                await startDelayStageProgram();
 
                 // --- D. Start Sub-Systems ---
                 await Task.Delay(500);
                 await signal; // Wait for connection
-
+                window = new Mov_Avg(20);
 
 
                 // Start reading signals
@@ -309,7 +315,7 @@ namespace Quantum_measurement_UI
 
                 isPaused = false; // Enable UI Chart Updates
                 AppendMessage("Alignment Started: Real-time data active.");
-
+                StartDAQButton_Click(this, null); // Start the DAQ process (if not already started)
                 // Start Visualization Updates
                 StartDataUpdates();
                 StartMotorPositionUpdates();
@@ -400,7 +406,6 @@ namespace Quantum_measurement_UI
                     // Reset metrics
                     PixelCumulativeSum = 0;
                     PixelCount = 0;
-                    SelectedPixelValue.Text = "0.00";
                 });
 
                 // NOTE: Skipped FFT and MATLAB analysis here because 

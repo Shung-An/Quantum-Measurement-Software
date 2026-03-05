@@ -1,6 +1,7 @@
 ﻿using LiveCharts;
 using LiveCharts.Defaults;
 using LiveCharts.Wpf;
+using LiveCharts.Configurations;
 using System.IO.Pipes;
 using System.Windows;
 using System.Windows.Media;
@@ -18,6 +19,7 @@ namespace Quantum_measurement_UI
     public partial class MainWindow : Window
     {
         #region Chart Initialization Functions
+
 
         /// <summary>
         /// Initializes the signal chart data with zeros.
@@ -52,6 +54,7 @@ namespace Quantum_measurement_UI
 
             int dataPointCount = DataPoints / 2;
 
+
             // Initialize the ChannelAValues and ChannelBValues with zeros
             for (int i = 0; i < dataPointCount; i++)
             {
@@ -80,26 +83,116 @@ namespace Quantum_measurement_UI
             }
         }
 
-        /// <summary>
-        /// Initializes the pixel chart for the selected pixel of the cross-correlation matrix over time.
-        /// </summary>
-        private void InitializePixelChart()
+        private void InitializeSpinNoiseMatrix()
         {
-            PixelValues = new ChartValues<double>();            // Initialize the PixelValues series
-            PixelSeriesCollection = new SeriesCollection
+            // 1. Define your threshold colors
+            var balancedColor = new SolidColorBrush(Color.FromRgb(31, 119, 180)); // Blue
+            var warningColor = new SolidColorBrush(Color.FromRgb(214, 39, 40));   // Red
+
+            // 2. Set the tolerance threshold (e.g., 0.005V)
+            double tolerance = 0.005;
+
+            // 3. Create the dynamic Mapper for LiveCharts
+            BalanceMapper = Mappers.Xy<double>()
+                .X((value, index) => index)  // X-axis is the bar index (1 to 49)
+                .Y(value => value)           // Y-axis is the actual voltage difference
+                .Fill(value => Math.Abs(value) > tolerance ? warningColor : balancedColor);
+
+            MatrixTableData.Clear();
+            for (int i = 1; i <= 49; i++)
             {
-                new LineSeries
+                MatrixTableData.Add(new MatrixBalanceItem { Channel = i, Value = 0.0 });
+            }
+
+            // 4. Initialize the 49-channel arrays with zeros
+            MatrixChartValues = new ChartValues<double>(new double[49]);
+            MatrixChartLabels = Enumerable.Range(1, 49).Select(i => i.ToString()).ToArray();
+            // Change this line:
+            historyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; // <--- Set to 1 second
+
+            historyTimer.Tick += (s, e) => {
+                foreach (var item in MatrixTableData)
                 {
-                    Title = "Selected Pixel",
-                    Values = PixelValues,                      // pixelValues binded to the Selected Pixel series
-                    PointGeometry = null,
-                    StrokeThickness = 2,
-                    Fill = Brushes.Transparent
+                    item.History.Add(item.PhysicalValue);
+
+                    // It still keeps 100 points, which now represents 100 seconds of history
+                    if (item.History.Count > 1000) item.History.RemoveAt(0);
+                }
+            };
+            historyTimer.Start();
+
+            // 5. Ensure the XAML can find these properties
+            DataContext = this;
+        }
+        private long lastProcessedFrameCount = 0;
+
+        private void InitializeAlignmentChart()
+        {
+            DispatcherTimer integrationTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+
+            integrationTimer.Tick += (s, e) =>
+            {
+                double[]? accepted64;
+                long acceptedValidFrame;
+
+                lock (_acceptedLock)
+                {
+                    accepted64 = _lastAccepted64Scaled;
+                    acceptedValidFrame = _lastAcceptedValidFrameIndex;
+                }
+
+                if (accepted64 == null) return;
+
+                // Only update if we have a NEW accepted frame since last tick
+                if (acceptedValidFrame > lastProcessedFrameCount)
+                {
+                    // IMPORTANT: indices are for 8x8 diagonal-like positions in 64 array
+                    double integralSum =
+                        accepted64[1] + accepted64[9] + accepted64[17] + accepted64[25] +
+                        accepted64[33] + accepted64[41] + accepted64[49] + accepted64[57];
+
+                    IntegratedDataHistory.Add(integralSum);
+                    if (IntegratedDataHistory.Count > 100)
+                        IntegratedDataHistory.RemoveAt(0);
+
+                    lastProcessedFrameCount = acceptedValidFrame;
+
+                    TotalIntegralFrames = acceptedValidFrame;
+                    UpdateRejectionUI();
                 }
             };
 
-            PixelChart.Series = PixelSeriesCollection;          // BIND the PixelSeriesCollection to the PixelChart
+            integrationTimer.Start();
         }
+
+
+        private void UpdateRejectionUI()
+        {
+            // Follow the global skip rate from your main data update logic
+            long total = TotalFramesReceived;
+            long skipped = TotalFramesSkipped;
+
+            if (total == 0) return;
+
+            double skipRate = (double)skipped / total * 100.0;
+            IntegralRejectionStatsText.Text = $"System Skip Rate: {skipped} / {total} ({skipRate:F2}%)";
+        }
+
+        private void InitializeRmsValues()
+        {
+            // FIX: Create actual List<double> for each of the 64 channels
+            channelRmsBuffers = new List<double>[64];
+            for (int i = 0; i < 64; i++)
+            {
+                channelRmsBuffers[i] = new List<double>(RmsWindowSize + 10);  // pre-allocate capacity
+            }
+
+         
+        }
+
 
         /// <summary>
         /// Initializes the charts used in the Autobalance feature.
