@@ -148,43 +148,34 @@ namespace Quantum_measurement_UI
             {
                 try
                 {
-                    // 1. Get the path to your MATLAB scripts
-                    // Assuming your .m files are in a "MatlabScripts" folder inside your project
-                    // Or you can hardcode the path where 'cm_pipeline_all_in_one.m' lives.
-                    string scriptDirectory = @"C:\Program Files (x86)\Gage\CompuScope\CompuScope C SDK\Test";
+                    string scriptDirectory = @"C:\Quantum Squeezing\prototype and postprocessing\post processing";
+                    string scriptPath = System.IO.Path.Combine(scriptDirectory, "cm_pipeline_all_in_one.py");
 
-                    // 2. Construct the MATLAB command
-                    // - cd to the script location
-                    // - call the function with the result folder path
-                    // - exit (optional: remove 'exit' if you want MATLAB to stay open to check plots)
-                    string matlabCommand = $"cd('{scriptDirectory}'); " +
-                                           $"try, cm_pipeline_all_in_one('{resultFolderPath}'); catch e, disp(e.message); end; ";
-
-                    // 3. Configure the Process
-                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    if (!System.IO.File.Exists(scriptPath))
                     {
-                        FileName = "matlab.exe",
-                        // -nosplash: Don't show the startup logo
-                        // -nodesktop: Don't open the full UI (optional, remove if you want to see figures)
-                        // -r: Run this command string
-                        Arguments = $"-nosplash -r \"{matlabCommand}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    // 4. Start MATLAB
-                    AppendMessage("Launching MATLAB for analysis...");
-                    using (Process matlab = Process.Start(startInfo))
-                    {
-                        // If you want C# to wait until MATLAB finishes (only if you include 'exit' in command)
-                        // matlab.WaitForExit(); 
+                        throw new FileNotFoundException($"Python post-processing script not found: {scriptPath}");
                     }
 
-                    AppendMessage("MATLAB analysis command sent.");
+                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    {
+                        FileName = "python",
+                        Arguments = $"\"{scriptPath}\" \"{resultFolderPath}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WorkingDirectory = scriptDirectory
+                    };
+
+                    AppendMessage("Launching Python post-processing...");
+                    using (Process python = Process.Start(startInfo))
+                    {
+                        // Fire-and-forget to match the old MATLAB behavior.
+                    }
+
+                    AppendMessage("Python post-processing command sent.");
                 }
                 catch (Exception ex)
                 {
-                    Dispatcher.Invoke(() => AppendMessage($"Failed to launch MATLAB: {ex.Message}"));
+                    Dispatcher.Invoke(() => AppendMessage($"Failed to launch Python post-processing: {ex.Message}"));
                 }
             });
         }
@@ -895,6 +886,7 @@ namespace Quantum_measurement_UI
                         item.Value = 0;
                         item.PhysicalValue = 0;
                         item.History.Clear(); // This clears the 100-point plot
+                        item.HistoryBinCounts.Clear();
                     }
                 }
 

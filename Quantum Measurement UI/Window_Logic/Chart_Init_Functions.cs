@@ -18,6 +18,8 @@ namespace Quantum_measurement_UI
 {
     public partial class MainWindow : Window
     {
+        private const double PositionHistoryBinSizeMm = 0.0001;
+
         #region Chart Initialization Functions
 
 
@@ -111,18 +113,46 @@ namespace Quantum_measurement_UI
             historyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; // <--- Set to 1 second
 
             historyTimer.Tick += (s, e) => {
+                double position = System.Threading.Volatile.Read(ref currentESPPosition);
+                if (double.IsNaN(position))
+                {
+                    return;
+                }
+
                 foreach (var item in MatrixTableData)
                 {
-                    item.History.Add(item.PhysicalValue);
-
-                    // It still keeps 100 points, which now represents 100 seconds of history
-                    if (item.History.Count > 1000) item.History.RemoveAt(0);
+                    UpdateHistoryAtPosition(item, position, item.PhysicalValue);
                 }
             };
             historyTimer.Start();
 
             // 5. Ensure the XAML can find these properties
             DataContext = this;
+        }
+
+        private void UpdateHistoryAtPosition(MatrixBalanceItem item, double position, double value)
+        {
+            double binnedPosition = Math.Round(position / PositionHistoryBinSizeMm) * PositionHistoryBinSizeMm;
+
+            for (int i = 0; i < item.History.Count; i++)
+            {
+                if (Math.Abs(item.History[i].X - binnedPosition) < 1e-9)
+                {
+                    int count = item.HistoryBinCounts.TryGetValue(binnedPosition, out int existingCount) ? existingCount : 1;
+                    item.History[i].Y = ((item.History[i].Y * count) + value) / (count + 1);
+                    item.HistoryBinCounts[binnedPosition] = count + 1;
+                    return;
+                }
+            }
+
+            int insertIndex = 0;
+            while (insertIndex < item.History.Count && item.History[insertIndex].X < binnedPosition)
+            {
+                insertIndex++;
+            }
+
+            item.History.Insert(insertIndex, new ObservablePoint(binnedPosition, value));
+            item.HistoryBinCounts[binnedPosition] = 1;
         }
         private long lastProcessedFrameCount = 0;
 
@@ -151,8 +181,8 @@ namespace Quantum_measurement_UI
                 {
                     // IMPORTANT: indices are for 8x8 diagonal-like positions in 64 array
                     double integralSum =
-                        accepted64[1] + accepted64[9] + accepted64[17] + accepted64[25] +
-                        accepted64[33] + accepted64[41] + accepted64[49] + accepted64[57];
+                       ( accepted64[1] + accepted64[9] + accepted64[17] + accepted64[25] +
+                        accepted64[33] + accepted64[41] + accepted64[49] + accepted64[57]) / 0.00000732421;
 
                     IntegratedDataHistory.Add(integralSum);
                     if (IntegratedDataHistory.Count > 100)

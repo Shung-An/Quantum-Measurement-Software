@@ -5,7 +5,7 @@
         xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="Quantum_measurement_UI.MainWindow"
         Title="Quantum Measurement Software" Height="Auto" Width="1000" Margin="30" 
     Closing="MainWindow_Closing">
-    
+
     <Grid Margin="0,0,0,-10">
         <!-- Define row definitions -->
         <Grid.RowDefinitions>
@@ -137,21 +137,31 @@
 
                             <GroupBox Header="Integrated Column Data (Indices 1,9,17...57)" Margin="10">
                                 <StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="5,0,0,5">
-                                        <TextBlock Name="IntegralRejectionStatsText" 
-                       Text="Rejection Rate: 0 / 0 (0.00%)" 
-                       VerticalAlignment="Center"
-                       FontWeight="SemiBold" 
-                       Foreground="DarkRed"
-                       Margin="0,0,15,0"/>
+                                    <!-- Header row: left = stats, right = reset button -->
+                                    <Grid Margin="5,0,5,5">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
 
-                                        <Button Name="ResetIntegralButton"
-                    Content="Reset Integral Data" 
-                    Width="130" Height="25"
-                    Click="ResetIntegralChart_Click"
-                    Background="#FFF0F0"
-                    FontWeight="Bold"/>
-                                    </StackPanel>
+                                        <TextBlock Grid.Column="0"
+                                                   Name="IntegralRejectionStatsText" 
+                                                   Text="Rejection Rate: 0 / 0 (0.00%)" 
+                                                   VerticalAlignment="Center"
+                                                   FontWeight="SemiBold" 
+                                                   Foreground="DarkRed"
+                                                   Margin="0,0,10,0"/>
+
+                                        <Button Grid.Column="1"
+                                                Name="ResetIntegralButton"
+                                                Content="Reset Integral Data" 
+                                                MinWidth="140" Height="26"
+                                                Padding="10,0"
+                                                HorizontalAlignment="Right"
+                                                Click="ResetIntegralChart_Click"
+                                                Background="#FFF0F0"
+                                                FontWeight="Bold"/>
+                                    </Grid>
 
                                     <lvc:CartesianChart DisableAnimations="True" Height="200" Hoverable="False">
                                         <lvc:CartesianChart.Series>
@@ -316,6 +326,15 @@
                                         <TextBlock Text="Description:" Width="70" VerticalAlignment="Center"/>
                                         <TextBox Name="DescriptionInput" Width="150" Text="Testing run"/>
                                     </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="5">
+                                        <TextBlock Text="Temp (K):" Width="70" VerticalAlignment="Center"/>
+                                        <TextBox Name="TemperatureInput" Width="100" Text="294"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="5">
+                                        <TextBlock Text="On Sample Power:" Width="70" VerticalAlignment="Center"/>
+                                        <TextBox Name="OnSamplePowerInput" Width="100" Text=""/>
+                                        <TextBlock Text="mW" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                    </StackPanel>
 
                                     <Label Content="Select Sample(s):" FontWeight="Bold" Margin="0,5,0,0"/>
                                     <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="3" Height="80" Margin="5">
@@ -446,18 +465,50 @@
                                         </Border>
                                     </StackPanel>
 
-                                    <GroupBox Header="Selected Channel History (1s intervals)" Grid.Column="1" Margin="5,0,0,0">
-                                        <lvc:CartesianChart Series="{Binding SelectedTrendSeries}" 
+                                    <GroupBox Header="Selected Channel Correlation vs ESP Position" Grid.Column="1" Margin="5,0,0,0">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="*"/>
+                                            </Grid.RowDefinitions>
+
+                                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5,5,5,8">
+                                                <TextBlock Text="Y Min:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <TextBox Name="SelectedTrendYMinTextBox"
+                                                         Width="70"
+                                                         Text="-10"
+                                                         VerticalContentAlignment="Center"
+                                                         Margin="0,0,12,0"/>
+                                                <TextBlock Text="Y Max:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <TextBox Name="SelectedTrendYMaxTextBox"
+                                                         Width="70"
+                                                         Text="10"
+                                                         VerticalContentAlignment="Center"
+                                                         Margin="0,0,12,0"/>
+                                                <Button Content="Apply Scale"
+                                                        Width="90"
+                                                        Height="24"
+                                                        Margin="0,0,8,0"
+                                                        Click="ApplySelectedTrendScale_Click"/>
+                                                <Button Content="Auto"
+                                                        Width="60"
+                                                        Height="24"
+                                                        Click="AutoScaleSelectedTrend_Click"/>
+                                            </StackPanel>
+
+                                            <lvc:CartesianChart Grid.Row="1"
+                                Series="{Binding SelectedTrendSeries}" 
                                 DisableAnimations="True" 
                                 Hoverable="False"
                                 LegendLocation="Right">
                                             <lvc:CartesianChart.AxisX>
-                                                <lvc:Axis Title="Samples (Total 100)"/>
+                                                <lvc:Axis Title="ESP Position (mm)"/>
                                             </lvc:CartesianChart.AxisX>
                                             <lvc:CartesianChart.AxisY>
-                                                <lvc:Axis Title="μrad²"/>
+                                                <lvc:Axis Name="SelectedTrendYAxis" Title="μrad²"/>
                                             </lvc:CartesianChart.AxisY>
-                                        </lvc:CartesianChart>
+                                            </lvc:CartesianChart>
+                                        </Grid>
                                     </GroupBox>
                                 </Grid>
                             </GroupBox>
@@ -650,7 +701,7 @@
 
                                     <TextBlock Text="Step Size (mm)" Margin="0,5,0,0"/>
                                     <TextBox x:Name="StepSizeInput" Width="100" Text="0.001"/>
-                                    
+
                                     <TextBlock Text="Loop Count" Margin="0,5,0,0"/>
                                     <TextBox x:Name="LoopCountInput" Width="100" Text="10"/>
 
@@ -659,7 +710,7 @@
 
                                     <Button Content="Run stepwise Cycle" Width="150" Margin="0,10,0,0" Click="RunAutoCycle_Click"/>
                                     <Button Content="Abort Cycle" Width="150" Margin="0,10,0,0" Click="StopAutoCycle_Click"/>
-                                    
+
 
                                 </StackPanel>
                             </GroupBox>
@@ -865,7 +916,7 @@
         </TabControl>
 
 
-         <!--Shared Message Box at the bottom--> 
+        <!--Shared Message Box at the bottom-->
         <GroupBox Header="Messages" Grid.Row="1" Margin="10">
             <Grid>
                 <ScrollViewer>
@@ -880,7 +931,7 @@
             </Grid>
         </GroupBox>
     </Grid>
-    
+
     <!--UI Elements-->
     <Window.Resources>
         <Style TargetType="TabControl">
@@ -891,8 +942,8 @@
                 </Style>
             </Style.Resources>
         </Style>
-        
-        
+
+
         <Style TargetType="Button">
             <Setter Property="Cursor" Value="Hand"/>
 
@@ -904,13 +955,13 @@
         </Style>
 
         <Style TargetType="GroupBox">
-            
+
 
             <Style.Resources>
                 <Style TargetType="Border">
-                    
+
                     <Setter Property="CornerRadius" Value="20"></Setter>
-                   
+
                 </Style>
             </Style.Resources>
         </Style>
@@ -920,4 +971,3 @@
         </Style>
     </Window.Resources>
 </Window>
-

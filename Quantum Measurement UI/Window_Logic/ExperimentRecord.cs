@@ -87,5 +87,7 @@ namespace Quantum_measurement_UI
         [JsonPropertyName("ShotNoise2_V")] public double ShotNoise2_V { get; set; }
         [JsonPropertyName("SignalLevel_V2_rtHz")] public double SignalLevel_V2_rtHz { get; set; }
         [JsonPropertyName("ConversionFactor_V2_rad2")] public double ConversionFactor_V2_rad2 { get; set; }
+        [JsonPropertyName("Temperature_K")] public double? Temperature_K { get; set; }
+        [JsonPropertyName("OnSamplePower_mW")] public double? OnSamplePower_mW { get; set; }
     }
 }

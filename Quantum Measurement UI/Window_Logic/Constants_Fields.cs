@@ -11,6 +11,7 @@ using Windows.Networking.PushNotifications;
 using Microsoft.UI.Xaml.Controls;
 using LiveCharts.Configurations;
 using System.Collections.ObjectModel;
+using System.Globalization;
 
 namespace Quantum_measurement_UI
 {
@@ -96,8 +97,9 @@ namespace Quantum_measurement_UI
             public double Value { get => _value; set { _value = value; OnPropertyChanged(nameof(Value)); OnPropertyChanged(nameof(Status)); } }
             public double PhysicalValue { get => _physValue; set { _physValue = value; OnPropertyChanged(nameof(PhysicalValue)); } }
 
-            // This stores the last 100 points for the trend plot
-            public ChartValues<double> History { get; set; } = new ChartValues<double>();
+            // Stores correlation history against the live ESP scan position.
+            public ChartValues<ObservablePoint> History { get; set; } = new ChartValues<ObservablePoint>();
+            public Dictionary<double, int> HistoryBinCounts { get; set; } = new Dictionary<double, int>();
 
             public string Status => Math.Abs(_value) > 0.005 ? "High" : "Balanced";
 
@@ -109,6 +111,37 @@ namespace Quantum_measurement_UI
         public ObservableCollection<MatrixBalanceItem> MatrixTableData { get; set; } = new ObservableCollection<MatrixBalanceItem>();
         public SeriesCollection SelectedTrendSeries { get; set; } = new SeriesCollection();
         private DispatcherTimer historyTimer;
+        private readonly double _defaultSelectedTrendYMin = -10.0;
+        private readonly double _defaultSelectedTrendYMax = 10.0;
+
+        private bool TryGetSelectedTrendScale(out double minValue, out double maxValue)
+        {
+            minValue = 0;
+            maxValue = 0;
+
+            if (!double.TryParse(SelectedTrendYMinTextBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out minValue) ||
+                !double.TryParse(SelectedTrendYMaxTextBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out maxValue))
+            {
+                AppendMessage("Enter valid numeric limits for the 3rd plot scale.");
+                return false;
+            }
+
+            if (minValue >= maxValue)
+            {
+                AppendMessage("The 3rd plot scale requires Y Min to be smaller than Y Max.");
+                return false;
+            }
+
+            return true;
+        }
+
+        private void SetSelectedTrendScale(double minValue, double maxValue)
+        {
+            SelectedTrendYAxis.MinValue = minValue;
+            SelectedTrendYAxis.MaxValue = maxValue;
+            SelectedTrendYMinTextBox.Text = minValue.ToString("G", CultureInfo.InvariantCulture);
+            SelectedTrendYMaxTextBox.Text = maxValue.ToString("G", CultureInfo.InvariantCulture);
+        }
 
 
         // Add this under your other private fields

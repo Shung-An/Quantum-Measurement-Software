@@ -419,6 +419,17 @@ namespace Quantum_measurement_UI
 
         private void SaveExperimentMetadata(string folderPath, string elapsedTime)
         {
+            double? temperatureK = null;
+            if (double.TryParse(TemperatureInput.Text, out double parsedTemperature))
+            {
+                temperatureK = parsedTemperature;
+            }
+
+            double? onSamplePowerMw = null;
+            if (double.TryParse(OnSamplePowerInput.Text, out double parsedOnSamplePower))
+            {
+                onSamplePowerMw = parsedOnSamplePower;
+            }
 
             // Get lists from UI
             var samples = GetSelectedSamples();
@@ -445,6 +456,11 @@ namespace Quantum_measurement_UI
                     Motor1Position = CalibrationMotor1Pos.Text, // Assuming you have this
                     Motor2Position = CalibrationMotor2Pos.Text,
                     ExternalClockStatus = ExtClkStatusText.Text
+                },
+                PhysicsData = new
+                {
+                    Temperature_K = temperatureK,
+                    OnSamplePower_mW = onSamplePowerMw
                 }
             };
 

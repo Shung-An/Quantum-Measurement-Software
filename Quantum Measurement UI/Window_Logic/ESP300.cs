@@ -222,6 +222,9 @@ namespace Quantum_measurement_UI
         // --- Helper for Thread-Safe Plot Updates ---
         private void UpdateDelayStagePlot(double position)
         {
+            System.Threading.Volatile.Write(ref currentESPPosition, position);
+            delayStageCurrentPosition = position;
+
             // Updates the chart on the UI thread without blocking the motor logic
             Dispatcher.InvokeAsync(() =>
             {

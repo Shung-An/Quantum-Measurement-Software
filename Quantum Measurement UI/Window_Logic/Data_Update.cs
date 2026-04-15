@@ -501,14 +501,15 @@ namespace Quantum_measurement_UI
 
         /// <summary>
         /// Retrieves the latest 64 channels from the correlation matrix, scaled properly.
-        /// Applies the strict 1e-8 RMS threshold check to ignore noise/empty frames.
+        /// Rejects frames when channel 0 exceeds the indicator threshold or the RMS is too small.
         /// </summary>
         private double[]? GetLatest64Channels(out double frame_rms)
         {
             // 0. Initialize the out parameter IMMEDIATELY to prevent CS0177
             frame_rms = 0.0;
 
-            const double ScaleFactor = 0.0576 / 1073741824.0;
+            const double ScaleFactor = 0.0576 / 1073741824.0*100;
+            const double Channel0RejectThreshold = 3e-7;
 
             // 1. Calculate Mean and Variance for the threshold check
             double sum = 0;
@@ -535,7 +536,14 @@ namespace Quantum_measurement_UI
                 return null; // Skip this frame entirely!
             }
 
-            // 4. Fetch & Scale the 64 channels
+            // 4. Use channel 0 as an indicator. Reject the frame if its amplitude is too large.
+            double channel0Amplitude = corrMatrixBuffer[0] * ScaleFactor;
+            if (Math.Abs(channel0Amplitude) > Channel0RejectThreshold)
+            {
+                return null;
+            }
+
+            // 5. Fetch & Scale the 64 channels
             double[] current64 = new double[64];
             for (int i = 0; i < 64; i++)
             {
@@ -651,16 +659,16 @@ namespace Quantum_measurement_UI
 
         private void HistoryTimer_Tick(object sender, EventArgs e)
         {
+            double position = System.Threading.Volatile.Read(ref currentESPPosition);
+            if (double.IsNaN(position))
+            {
+                return;
+            }
+
             // Capture the current physical values for all 49 channels into their history
             foreach (var item in MatrixTableData)
             {
-                item.History.Add(item.PhysicalValue);
-
-                // Limit to 100 points
-                if (item.History.Count > 100)
-                {
-                    item.History.RemoveAt(0);
-                }
+                UpdateHistoryAtPosition(item, position, item.PhysicalValue);
             }
         }
 

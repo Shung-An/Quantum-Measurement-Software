@@ -74,5 +74,20 @@ namespace Quantum_measurement_UI
         {
 
         }
+
+        private void ApplySelectedTrendScale_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetSelectedTrendScale(out double minValue, out double maxValue))
+                return;
+
+            SetSelectedTrendScale(minValue, maxValue);
+        }
+
+        private void AutoScaleSelectedTrend_Click(object sender, RoutedEventArgs e)
+        {
+            SetSelectedTrendScale(double.NaN, double.NaN);
+            SelectedTrendYMinTextBox.Text = _defaultSelectedTrendYMin.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+            SelectedTrendYMaxTextBox.Text = _defaultSelectedTrendYMax.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+        }
     }
 }
