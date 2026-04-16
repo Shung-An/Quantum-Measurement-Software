@@ -302,6 +302,12 @@ namespace Quantum_measurement_UI
         private readonly object _acceptedLock = new object();
         private double[]? _lastAccepted64Scaled;     // already scaled, already passed RMS threshold
         private long _lastAcceptedValidFrameIndex;   // validFrames value for that snapshot
+        private double[] _latestRawMatrixFrame = new double[64];
+        private double[] _latestOddHeatmapFrame = new double[64];
+        private double[] _latestReduced49Frame = new double[49];
+        private double _lastAcceptedFrameRms = double.NaN;
+        private double _lastAcceptedChannel0Amplitude = double.NaN;
+        private DateTime _lastMatrixFrameReceivedUtc = DateTime.MinValue;
 
         private StreamWriter experimentLogWriter;
         private StreamWriter motorMetricLogWriter;

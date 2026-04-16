@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Threading;
 using NationalInstruments.Visa;
 using Ivi.Visa;
@@ -26,6 +27,8 @@ namespace Quantum_measurement_UI
         private IVisaSession _visaSession;
         private IMessageBasedSession _session;
         private IMessageBasedFormattedIO formattedIO;
+        private readonly object _ioLock = new object();
+        private const int PositionReadRetryCount = 3;
 
         /// <summary>
         /// Connects to the ESP300 controller
@@ -87,19 +90,19 @@ namespace Quantum_measurement_UI
         public String GetDelayStageInfo()
         {
             string axisPrefix = Axis.ToString();
-            SendCommand($"{axisPrefix}ID?");
-            string response = formattedIO.ReadLine();
+            string response = Query($"{axisPrefix}ID?");
             return ($"model and serial number: {response}");
         }
 
         public string ReadResponse()
         {
-            if (formattedIO != null)
+            lock (_ioLock)
             {
-                return formattedIO.ReadLine();
-            }
-            else
-            {
+                if (formattedIO != null)
+                {
+                    return formattedIO.ReadLine();
+                }
+
                 throw new Exception("formattedIO session is not initialized.");
             }
         }
@@ -109,22 +112,42 @@ namespace Quantum_measurement_UI
         public double GetCurrentPosition()
         {
             string axisPrefix = Axis.ToString();
-            SendCommand($"{axisPrefix}TP?");
-            string response = formattedIO.ReadLine();
+            string command = $"{axisPrefix}TP?";
 
-            if (double.TryParse(response, out double position))
+            for (int attempt = 1; attempt <= PositionReadRetryCount; attempt++)
             {
-                return position;
+                try
+                {
+                    string response = Query(command)?.Trim();
+                    if (double.TryParse(response, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out double position))
+                    {
+                        currentPosition = position;
+                        return position;
+                    }
+                }
+                catch (Ivi.Visa.IOTimeoutException)
+                {
+                    ResetIoStateAfterReadFailure();
+                }
+                catch (InvalidOperationException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    ResetIoStateAfterReadFailure();
+                }
+
+                Thread.Sleep(50 * attempt);
             }
 
-            return double.NaN;
+            return currentPosition;
         }
 
         public int getMotionStatus()
         {
             string axisPrefix = Axis.ToString();
-            SendCommand($"{axisPrefix}MD?");
-            string response = formattedIO.ReadLine();
+            string response = Query($"{axisPrefix}MD?")?.Trim();
             
             if (int.TryParse(response, out int status))
             {
@@ -154,37 +177,40 @@ namespace Quantum_measurement_UI
         /// </summary>
         public string ClearAllErrors()
         {
-            if (_session == null || formattedIO == null)
-                return "ESP300 not connected.";
-
-            var sb = new System.Text.StringBuilder();
-
-            try
+            lock (_ioLock)
             {
-                // Drain error queue
-                for (int i = 0; i < 64; i++) // ESP300 error queue depth is limited
+                if (_session == null || formattedIO == null)
+                    return "ESP300 not connected.";
+
+                var sb = new System.Text.StringBuilder();
+
+                try
                 {
-                    formattedIO.WriteLine("ER?");
-                    var resp = formattedIO.ReadLine()?.Trim();
+                    // Drain error queue
+                    for (int i = 0; i < 64; i++) // ESP300 error queue depth is limited
+                    {
+                        formattedIO.WriteLine("ER?");
+                        var resp = formattedIO.ReadLine()?.Trim();
 
-                    if (string.IsNullOrWhiteSpace(resp))
-                        break;
+                        if (string.IsNullOrWhiteSpace(resp))
+                            break;
 
-                    sb.AppendLine(resp);
+                        sb.AppendLine(resp);
 
-                    if (resp.StartsWith("0")) // "0, ..." => no more errors
-                        break;
+                        if (resp.StartsWith("0")) // "0, ..." => no more errors
+                            break;
+                    }
+
+                    // Clear status registers
+                    formattedIO.WriteLine("CL");
+                }
+                catch (Exception ex)
+                {
+                    return $"ClearAllErrors failed: {ex.Message}";
                 }
 
-                // Clear status registers
-                formattedIO.WriteLine("CL");
+                return sb.Length > 0 ? sb.ToString().TrimEnd() : "No errors in queue.";
             }
-            catch (Exception ex)
-            {
-                return $"ClearAllErrors failed: {ex.Message}";
-            }
-
-            return sb.Length > 0 ? sb.ToString().TrimEnd() : "No errors in queue.";
         }
 
 
@@ -193,10 +219,13 @@ namespace Quantum_measurement_UI
         /// </summary>
         public void SendCommand(string command)
         {
-            if (formattedIO == null)
-                throw new InvalidOperationException("VISA session not initialized");
+            lock (_ioLock)
+            {
+                if (formattedIO == null)
+                    throw new InvalidOperationException("VISA session not initialized");
 
-            formattedIO.WriteLine(command);
+                formattedIO.WriteLine(command);
+            }
         }
 
 
@@ -205,11 +234,14 @@ namespace Quantum_measurement_UI
         /// </summary>
         public string Query(string command)
         {
-            if (formattedIO == null)
-                throw new InvalidOperationException("VISA session not initialized");
+            lock (_ioLock)
+            {
+                if (formattedIO == null)
+                    throw new InvalidOperationException("VISA session not initialized");
 
-            formattedIO.WriteLine(command);
-            return formattedIO.ReadLine();
+                formattedIO.WriteLine(command);
+                return formattedIO.ReadLine();
+            }
         }
         /// <summary>
         /// Checks for any errors using TB?. If errors exist, drains ER? until no errors remain,
@@ -218,33 +250,36 @@ namespace Quantum_measurement_UI
         /// </summary>
         public string CheckForErrors()
         {
-            if (_session == null || formattedIO == null)
-                return "ESP300 not connected.";
-
-            try
+            lock (_ioLock)
             {
-                formattedIO.WriteLine("TB?");
-                string tb = formattedIO.ReadLine()?.Trim();
+                if (_session == null || formattedIO == null)
+                    return "ESP300 not connected.";
 
-                if (string.IsNullOrWhiteSpace(tb))
-                    return "TB? returned empty response";
+                try
+                {
+                    formattedIO.WriteLine("TB?");
+                    string tb = formattedIO.ReadLine()?.Trim();
 
-                if (tb.StartsWith("0,"))
-                    return "No delay stage errors detected";
+                    if (string.IsNullOrWhiteSpace(tb))
+                        return "TB? returned empty response";
 
-                // drain ER? queue once
-                formattedIO.WriteLine("ER?");
-                string er = formattedIO.ReadLine()?.Trim();
+                    if (tb.StartsWith("0,"))
+                        return "No delay stage errors detected";
 
-                return string.IsNullOrWhiteSpace(er) ? tb : $"{tb}\n{er}";
-            }
-            catch (Ivi.Visa.IOTimeoutException)
-            {
-                return "Timeout while checking ESP300 errors.";
-            }
-            catch (Exception ex)
-            {
-                return $"CheckForErrors failed: {ex.Message}";
+                    // drain ER? queue once
+                    formattedIO.WriteLine("ER?");
+                    string er = formattedIO.ReadLine()?.Trim();
+
+                    return string.IsNullOrWhiteSpace(er) ? tb : $"{tb}\n{er}";
+                }
+                catch (Ivi.Visa.IOTimeoutException)
+                {
+                    return "Timeout while checking ESP300 errors.";
+                }
+                catch (Exception ex)
+                {
+                    return $"CheckForErrors failed: {ex.Message}";
+                }
             }
         }
 
@@ -265,29 +300,47 @@ namespace Quantum_measurement_UI
         /// <param name="stopMotion">Send ST to stop motion before disconnecting.</param>
         public void Disconnect(bool abortProgram = true, bool stopMotion = true)
         {
-            // Best-effort commands; swallow errors if the link is already gone.
-            try
+            lock (_ioLock)
             {
-                if (abortProgram && IsConnected) formattedIO.WriteLine("AB"); // Abort program (ESP300)
-            }
-            catch { /* ignore */ }
+                // Best-effort commands; swallow errors if the link is already gone.
+                try
+                {
+                    if (abortProgram && IsConnected) formattedIO?.WriteLine("AB"); // Abort program (ESP300)
+                }
+                catch { /* ignore */ }
 
-            try
+                try
+                {
+                    if (stopMotion && IsConnected) formattedIO?.WriteLine("ST"); // Stop motion
+                }
+                catch { /* ignore */ }
+
+                // Try to clear I/O buffers (non-fatal if it fails)
+                try { _session?.Clear(); } catch { /* ignore */ }
+
+                // Dispose VISA objects in reverse order of creation
+                try { formattedIO = null; } catch { /* ignore */ }
+                try { _session?.Dispose(); } catch { /* ignore */ } finally { _session = null; }
+                try { _visaSession?.Dispose(); } catch { /* ignore */ } finally { _visaSession = null; }
+                try { _resourceManager?.Dispose(); } catch { /* ignore */ } finally { _resourceManager = null; }
+
+                IsConnected = false;
+            }
+        }
+
+        private void ResetIoStateAfterReadFailure()
+        {
+            lock (_ioLock)
             {
-                if (stopMotion && IsConnected) formattedIO.WriteLine("ST"); // Stop motion
+                try
+                {
+                    _session?.Clear();
+                }
+                catch
+                {
+                    // Best effort only: recovering from intermittent controller read glitches.
+                }
             }
-            catch { /* ignore */ }
-
-            // Try to clear I/O buffers (non-fatal if it fails)
-            try { _session?.Clear(); } catch { /* ignore */ }
-
-            // Dispose VISA objects in reverse order of creation
-            try { formattedIO = null; } catch { /* ignore */ }
-            try { _session?.Dispose(); } catch { /* ignore */ } finally { _session = null; }
-            try { _visaSession?.Dispose(); } catch { /* ignore */ } finally { _visaSession = null; }
-            try { _resourceManager?.Dispose(); } catch { /* ignore */ } finally { _resourceManager = null; }
-
-            IsConnected = false;
         }
 
 

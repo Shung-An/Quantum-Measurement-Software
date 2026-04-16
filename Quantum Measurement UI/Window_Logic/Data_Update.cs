@@ -301,6 +301,7 @@ namespace Quantum_measurement_UI
 
                 // 7) Copy matrix bytes → double[] corrMatrixBuffer
                 Buffer.BlockCopy(mBytes, 0, corrMatrixBuffer, 0, matrixBytes);
+                ProcessReceivedCorrelationMatrixFrame();
 
                 return true;
             }
@@ -388,6 +389,49 @@ namespace Quantum_measurement_UI
             }
         }
 
+        private void ProcessReceivedCorrelationMatrixFrame()
+        {
+            double[] rawSnapshot = new double[64];
+            Array.Copy(corrMatrixBuffer, rawSnapshot, rawSnapshot.Length);
+
+            lock (_acceptedLock)
+            {
+                TotalFramesReceived++;
+                _lastMatrixFrameReceivedUtc = DateTime.UtcNow;
+                Array.Copy(rawSnapshot, _latestRawMatrixFrame, rawSnapshot.Length);
+
+                // Only odd-numbered received events contain the physical signal we want to accumulate.
+                if (TotalFramesReceived % 2 == 0)
+                {
+                    TotalFramesSkipped++;
+                    return;
+                }
+
+                Array.Copy(rawSnapshot, _latestOddHeatmapFrame, rawSnapshot.Length);
+
+                if (!TryAnalyzeCorrelationMatrix(rawSnapshot, out double[] current64, out double[] reduced49, out double frameRms, out double channel0Amplitude))
+                {
+                    TotalFramesSkipped++;
+                    _lastAcceptedFrameRms = frameRms;
+                    _lastAcceptedChannel0Amplitude = channel0Amplitude;
+                    return;
+                }
+
+                long validFrames = TotalFramesReceived - TotalFramesSkipped;
+                _lastAccepted64Scaled = current64;
+                _lastAcceptedValidFrameIndex = validFrames;
+                _lastAcceptedFrameRms = frameRms;
+                _lastAcceptedChannel0Amplitude = channel0Amplitude;
+                Array.Copy(reduced49, _latestReduced49Frame, reduced49.Length);
+                Array.Copy(reduced49, current49ChannelValues, reduced49.Length);
+
+                for (int i = 0; i < reduced49.Length; i++)
+                {
+                    Cumulative49Channels[i] += reduced49[i];
+                }
+            }
+        }
+
         
 
         /// <summary>
@@ -457,6 +501,12 @@ namespace Quantum_measurement_UI
         private void UpdateHeatmap()
         {
             int matrixSize = 8; // Assuming 8x8 correlation matrix
+            double[] heatmapFrame = new double[64];
+
+            lock (_acceptedLock)
+            {
+                Array.Copy(_latestOddHeatmapFrame, heatmapFrame, heatmapFrame.Length);
+            }
 
             if (heatValues.Count == 0)
             {
@@ -477,8 +527,8 @@ namespace Quantum_measurement_UI
                 {
                     int index = y * matrixSize + x; // Index in row-major order
 
-                    // Update the HeatPoint with the new value
-                    heatValues[index].Weight = Math.Round(corrMatrixBuffer[index], 2);
+                    // Frontend heatmap renders the latest odd-parity frame only.
+                    heatValues[index].Weight = Math.Round(heatmapFrame[index], 2);
                 }
             }
         }
@@ -515,28 +565,35 @@ namespace Quantum_measurement_UI
 
         /// <summary>
         /// Retrieves the latest 64 channels from the correlation matrix, scaled properly.
-        /// Rejects frames when channel 0 exceeds the indicator threshold or the RMS is too small.
+        /// Rejects frames when channel 0 exceeds the indicator threshold.
         /// </summary>
-        private double[]? GetLatest64Channels(out double frame_rms)
+        private bool TryAnalyzeCorrelationMatrix(
+            double[] sourceMatrix,
+            out double[] current64,
+            out double[] reduced49,
+            out double frame_rms,
+            out double channel0Amplitude)
         {
-            // 0. Initialize the out parameter IMMEDIATELY to prevent CS0177
+            current64 = Array.Empty<double>();
+            reduced49 = Array.Empty<double>();
             frame_rms = 0.0;
+            channel0Amplitude = 0.0;
 
             const double ScaleFactor = 0.0576 / 1073741824.0*100;
             const double Channel0RejectThreshold = 3e-7;
 
             // 1. Calculate Mean and Variance for the threshold check
             double sum = 0;
-            for (int i = 0; i < 64; i++)
+            for (int i = 0; i < sourceMatrix.Length; i++)
             {
-                sum += corrMatrixBuffer[i] * ScaleFactor;
+                sum += sourceMatrix[i] * ScaleFactor;
             }
             double mean = sum / 64.0;
 
             double sqSum = 0;
-            for (int i = 0; i < 64; i++)
+            for (int i = 0; i < sourceMatrix.Length; i++)
             {
-                sqSum += Math.Pow(corrMatrixBuffer[i] * ScaleFactor - mean, 2);
+                sqSum += Math.Pow(sourceMatrix[i] * ScaleFactor - mean, 2);
             }
             double variance = sqSum / 64.0;
 
@@ -544,80 +601,74 @@ namespace Quantum_measurement_UI
             // FIX: REMOVED THE WORD 'double' HERE!
             frame_rms = Math.Sqrt(variance);
 
-            // 3. The Crucial Threshold Check (User experience: 1e-8)
-            if (frame_rms < 1e-8)
-            {
-                return null; // Skip this frame entirely!
-            }
-
-            // 4. Use channel 0 as an indicator. Reject the frame if its amplitude is too large.
-            double channel0Amplitude = corrMatrixBuffer[0] * ScaleFactor;
+            // 3. Use channel 0 as an indicator. Reject the frame if its amplitude is too large.
+            channel0Amplitude = sourceMatrix[0] * ScaleFactor;
             if (Math.Abs(channel0Amplitude) > Channel0RejectThreshold)
             {
-                return null;
+                return false;
             }
 
-            // 5. Fetch & Scale the 64 channels
-            double[] current64 = new double[64];
+            // 4. Fetch & Scale the 64 channels
+            current64 = new double[64];
             for (int i = 0; i < 64; i++)
             {
-                current64[i] = corrMatrixBuffer[i] * ScaleFactor;
+                current64[i] = sourceMatrix[i] * ScaleFactor;
             }
 
-            return current64;
+            reduced49 = ReduceTo49Channels(current64);
+            return true;
         }
         /// <summary>
         /// Updates the 49-Channel Bar Chart UI with Cumulative Sums and tracks skipped frames.
         /// </summary>
         private void Update49ChannelBarChart()
         {
-            TotalFramesReceived++;
-            double[]? current64 = GetLatest64Channels(out double currentRms);
-            if (current64 == null) { TotalFramesSkipped++; return; }
+            long totalFramesReceived;
+            long totalFramesSkipped;
+            long validFrames;
+            double[] cumulativeSnapshot = new double[49];
+            double currentRms;
 
-            long validFrames = TotalFramesReceived - TotalFramesSkipped;
-
-            // ✅ Snapshot the ACCEPTED (threshold-passed) scaled frame for other charts (integral, etc.)
             lock (_acceptedLock)
             {
-                _lastAccepted64Scaled = current64;           // already scaled by ScaleFactor
-                _lastAcceptedValidFrameIndex = validFrames;  // ties snapshot to validFrames
+                totalFramesReceived = TotalFramesReceived;
+                totalFramesSkipped = TotalFramesSkipped;
+                validFrames = totalFramesReceived - totalFramesSkipped;
+                currentRms = _lastAcceptedFrameRms;
+                Array.Copy(Cumulative49Channels, cumulativeSnapshot, cumulativeSnapshot.Length);
             }
 
-            double[] reduced49 = ReduceTo49Channels(current64);
-
-            Dispatcher.Invoke(() =>
+            if (validFrames <= 0)
             {
-                if (validFrames <= 0) return;
+                UpdateSkipStatsUI(currentRms, totalFramesReceived, totalFramesSkipped);
+                return;
+            }
 
-                for (int i = 0; i < 49; i++)
-                {
-                    Cumulative49Channels[i] += reduced49[i];
-                    double avgV2 = Cumulative49Channels[i] / validFrames;
+            for (int i = 0; i < 49; i++)
+            {
+                double avgV2 = cumulativeSnapshot[i] / validFrames;
+                double physValue = (avgV2 / conversionFactor_V2_per_rad2) * 1e12;
 
-                    double physValue = (avgV2 / conversionFactor_V2_per_rad2) * 1e12;
+                MatrixTableData[i].Value = avgV2;
+                MatrixTableData[i].PhysicalValue = physValue;
+            }
 
-                    MatrixTableData[i].Value = avgV2;
-                    MatrixTableData[i].PhysicalValue = physValue;
-                }
-            });
-
-            UpdateSkipStatsUI(currentRms);
+            UpdateSkipStatsUI(currentRms, totalFramesReceived, totalFramesSkipped);
         }
 
 
         /// <summary>
         /// Helper to calculate and display the skipped frame percentage.
         /// </summary>
-        private void UpdateSkipStatsUI(double rmsValue)
+        private void UpdateSkipStatsUI(double rmsValue, long totalFramesReceived, long totalFramesSkipped)
         {
-            if (TotalFramesReceived == 0) return;
+            if (totalFramesReceived == 0) return;
 
-            long valid = TotalFramesReceived - TotalFramesSkipped;
-            double percentSkipped = (double)TotalFramesSkipped / TotalFramesReceived * 100.0;
+            long valid = totalFramesReceived - totalFramesSkipped;
+            double percentSkipped = (double)totalFramesSkipped / totalFramesReceived * 100.0;
 
             SkippedFramesText.Text =
-                $"Skipped: {TotalFramesSkipped} / {TotalFramesReceived} ({percentSkipped:F2}%)  •  " +
+                $"Skipped: {totalFramesSkipped} / {totalFramesReceived} ({percentSkipped:F2}%)  •  " +
                 $"Valid frames: {valid}  •  RMS: {rmsValue:E2}";
         }
 

@@ -157,20 +157,11 @@ namespace Quantum_measurement_UI
             {
                 string axisPrefix = esp300Controller.Axis.ToString();
 
-                esp300Controller.SendCommand($"{axisPrefix}VA?");
-                VAInput.Text = esp300Controller.ReadResponse().Trim();
-
-                esp300Controller.SendCommand($"{axisPrefix}VU?");
-                VUInput.Text = esp300Controller.ReadResponse().Trim();
-
-                esp300Controller.SendCommand($"{axisPrefix}AC?");
-                ACInput.Text = esp300Controller.ReadResponse().Trim();
-
-                esp300Controller.SendCommand($"{axisPrefix}AU?");
-                AUInput.Text = esp300Controller.ReadResponse().Trim();
-
-                esp300Controller.SendCommand($"{axisPrefix}AG?");
-                AGInput.Text = esp300Controller.ReadResponse().Trim();
+                VAInput.Text = esp300Controller.Query($"{axisPrefix}VA?").Trim();
+                VUInput.Text = esp300Controller.Query($"{axisPrefix}VU?").Trim();
+                ACInput.Text = esp300Controller.Query($"{axisPrefix}AC?").Trim();
+                AUInput.Text = esp300Controller.Query($"{axisPrefix}AU?").Trim();
+                AGInput.Text = esp300Controller.Query($"{axisPrefix}AG?").Trim();
 
                 AppendMessage("Read current motion settings successfully.");
                 LogExperimentEvent("Read current motion settings successfully.");
@@ -217,6 +208,36 @@ namespace Quantum_measurement_UI
             {
                 AppendMessage($"Error sending ESP command '{command}': {ex.Message}");
             }
+        }
+
+        private bool TryGetRobustESPPosition(out double position)
+        {
+            double readPosition = esp300Controller.GetCurrentPosition();
+            if (!double.IsNaN(readPosition) && !double.IsInfinity(readPosition))
+            {
+                position = readPosition;
+                return true;
+            }
+
+            double cachedPosition = System.Threading.Volatile.Read(ref currentESPPosition);
+            if (!double.IsNaN(cachedPosition) && !double.IsInfinity(cachedPosition))
+            {
+                position = cachedPosition;
+                return false;
+            }
+
+            position = 0.0;
+            return false;
+        }
+
+        private void UpdateDelayStageReadout(double position, string statusText, Brush indicatorBrush)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                DelayStagePositionText.Text = position.ToString("F4", CultureInfo.InvariantCulture);
+                DelayStageStatusText.Text = statusText;
+                DelayStageStatusIndicator.Fill = indicatorBrush;
+            });
         }
 
         // --- Helper for Thread-Safe Plot Updates ---
@@ -282,6 +303,7 @@ namespace Quantum_measurement_UI
                 // B) ACTIVE WAIT LOOP: Wait for motor to stop while updating plot
                 bool isMoving = true;
                 int timeoutCounter = 0;
+                int consecutiveReadFailures = 0;
 
                 // Wait 200ms for the controller to register the "Busy" state
                 await Task.Delay(200);
@@ -289,12 +311,17 @@ namespace Quantum_measurement_UI
                 while (isMoving && timeoutCounter < 100) // 10 second timeout
                 {
                     // Read hardware
-                    double currentPos = esp300Controller.GetCurrentPosition();
+                    bool hasFreshPosition = TryGetRobustESPPosition(out double currentPos);
                     int status = esp300Controller.getMotionStatus(); // 1 usually means "Stopped"
+
+                    consecutiveReadFailures = hasFreshPosition ? 0 : consecutiveReadFailures + 1;
 
                     // Update Plot & UI
                     UpdateDelayStagePlot(currentPos);
-                    Dispatcher.Invoke(() => DelayStagePositionText.Text = currentPos.ToString("F4"));
+                    UpdateDelayStageReadout(
+                        currentPos,
+                        consecutiveReadFailures >= 3 ? "Position read retrying" : "Moving",
+                        consecutiveReadFailures >= 3 ? Brushes.Goldenrod : Brushes.Green);
 
                     // Check if settled
                     if (status == 1)
@@ -343,23 +370,23 @@ namespace Quantum_measurement_UI
                 // Run this in the background so it doesn't block the UI
                 _ = Task.Run(async () =>
                 {
+                    int consecutiveReadFailures = 0;
                     while (!token.IsCancellationRequested)
                     {
                         try
                         {
                             // A. Read Position
-                            double position = esp300Controller.GetCurrentPosition();
+                            bool hasFreshPosition = TryGetRobustESPPosition(out double position);
+                            consecutiveReadFailures = hasFreshPosition ? 0 : consecutiveReadFailures + 1;
 
                             // B. Update Plot (Using the same helper)
                             UpdateDelayStagePlot(position);
 
                             // C. Update Text UI
-                            Dispatcher.Invoke(() =>
-                            {
-                                DelayStagePositionText.Text = position.ToString("F4");
-                                DelayStageStatusText.Text = "Running";
-                                DelayStageStatusIndicator.Fill = Brushes.Green;
-                            });
+                            UpdateDelayStageReadout(
+                                position,
+                                consecutiveReadFailures >= 3 ? "Position read retrying" : "Running",
+                                consecutiveReadFailures >= 3 ? Brushes.Goldenrod : Brushes.Green);
 
                             // D. Log to file
                             if (delayStageLogWriter != null)
