@@ -717,10 +717,21 @@ namespace Quantum_measurement_UI
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string filename = Path.Combine(motorVsAi5AutoLogDirectory, $"MotorVsAI5_{timestamp}.csv");
 
+            ObservablePoint[] pointsSnapshot;
+            try
+            {
+                pointsSnapshot = Dispatcher.Invoke(() => MotorVsAI5Values.ToArray());
+            }
+            catch (Exception ex)
+            {
+                AppendMessage($"Error snapshotting Motor vs AI5 data: {ex.Message}");
+                return;
+            }
+
             using (var writer = new StreamWriter(filename))
             {
                 writer.WriteLine("MotorPosition,AI5Amplitude");
-                foreach (var point in MotorVsAI5Values)
+                foreach (var point in pointsSnapshot)
                 {
                     writer.WriteLine($"{point.X:F5},{point.Y:F5}");
                 }
@@ -870,9 +881,10 @@ namespace Quantum_measurement_UI
             {
                 try
                 {
-                    if (daqPipe != null && daqPipe.IsConnected)
+                    var localPipe = daqPipe;
+                    if (localPipe != null && localPipe.IsConnected)
                     {
-                        string response = await daqPipe.SendCommandAsync("ReadAI");
+                        string response = await localPipe.SendCommandAsync("ReadAI");
 
                         string[] tokens = response.Split(',');
                         for (int i = 0; i < tokens.Length && i < daqBuffer.Length; i++)
@@ -924,6 +936,15 @@ namespace Quantum_measurement_UI
                 }
                 catch (OperationCanceledException)
                 {
+                    break;
+                }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("Pipe is not connected."))
+                {
+                    Console.WriteLine("Auto read stopped: pipe disconnected.");
                     break;
                 }
                 catch (Exception ex)

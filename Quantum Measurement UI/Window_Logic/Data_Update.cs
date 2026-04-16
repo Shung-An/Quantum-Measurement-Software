@@ -338,9 +338,10 @@ namespace Quantum_measurement_UI
             {
                 try
                 {
-                    if (daqPipe != null && daqPipe.IsConnected)
+                    var localPipe = daqPipe;
+                    if (localPipe != null && localPipe.IsConnected)
                     {
-                        string response = await daqPipe.SendCommandAsync("ReadAI");
+                        string response = await localPipe.SendCommandAsync("ReadAI");
                              
                         string[] tokens = response.Split(',');
                         for (int i = 0; i < tokens.Length && i < daqBuffer.Length; i++)
@@ -365,12 +366,25 @@ namespace Quantum_measurement_UI
                         }
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("Pipe is not connected."))
+                {
+                    Console.WriteLine("Auto read stopped: pipe disconnected.");
+                    break;
+                }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Auto read error: {ex.Message}");
                 }
 
-                await Task.Delay(100); // Delay for 100 milliseconds 
+                await Task.Delay(100, token); // Delay for 100 milliseconds 
             }
         }
 
