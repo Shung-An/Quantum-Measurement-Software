@@ -12,6 +12,9 @@ using Microsoft.UI.Xaml.Controls;
 using LiveCharts.Configurations;
 using System.Collections.ObjectModel;
 using System.Globalization;
+using OxyPlot;
+using OxyPlot.Axes;
+using OxyPlot.Series;
 
 namespace Quantum_measurement_UI
 {
@@ -100,6 +103,10 @@ namespace Quantum_measurement_UI
             // Stores correlation history against the live ESP scan position.
             public ChartValues<ObservablePoint> History { get; set; } = new ChartValues<ObservablePoint>();
             public Dictionary<double, int> HistoryBinCounts { get; set; } = new Dictionary<double, int>();
+            public ChartValues<ObservablePoint> CurrentPositionCumulativeHistory { get; set; } = new ChartValues<ObservablePoint>();
+            public double CurrentPositionTrackedBin { get; set; } = double.NaN;
+            public int CurrentPositionAcceptedCount { get; set; } = 0;
+            public double CurrentPositionRunningAverage { get; set; } = 0.0;
 
             public string Status => Math.Abs(_value) > 0.005 ? "High" : "Balanced";
 
@@ -109,7 +116,11 @@ namespace Quantum_measurement_UI
 
         // In your MainWindow class fields:
         public ObservableCollection<MatrixBalanceItem> MatrixTableData { get; set; } = new ObservableCollection<MatrixBalanceItem>();
-        public SeriesCollection SelectedTrendSeries { get; set; } = new SeriesCollection();
+        public PlotModel? IntegratedPlotModel { get; set; }
+        public PlotModel? SelectedTrendPlotModel { get; set; }
+        public PlotModel? SelectedPositionAveragePlotModel { get; set; }
+        private LineSeries? _integratedPlotSeries;
+        private LinearAxis? _selectedTrendYAxisModel;
         private DispatcherTimer historyTimer;
         private readonly double _defaultSelectedTrendYMin = -10.0;
         private readonly double _defaultSelectedTrendYMax = 10.0;
@@ -137,8 +148,14 @@ namespace Quantum_measurement_UI
 
         private void SetSelectedTrendScale(double minValue, double maxValue)
         {
-            SelectedTrendYAxis.MinValue = minValue;
-            SelectedTrendYAxis.MaxValue = maxValue;
+            if (_selectedTrendYAxisModel == null)
+            {
+                return;
+            }
+
+            _selectedTrendYAxisModel.Minimum = minValue;
+            _selectedTrendYAxisModel.Maximum = maxValue;
+            SelectedTrendPlotModel?.InvalidatePlot(false);
             SelectedTrendYMinTextBox.Text = minValue.ToString("G", CultureInfo.InvariantCulture);
             SelectedTrendYMaxTextBox.Text = maxValue.ToString("G", CultureInfo.InvariantCulture);
         }
@@ -245,6 +262,15 @@ namespace Quantum_measurement_UI
         // For Heatmap to visualize the cross-correlation matrix
         public ChartValues<HeatPoint> heatValues { get; set; }
 
+        // OxyPlot-backed live views for lower-overhead rendering.
+        public PlotModel? SignalPlotModel { get; set; }
+        public PlotModel? HeatmapPlotModel { get; set; }
+        public PlotModel? RmsPlotModel { get; set; }
+        private LineSeries? _signalSeriesA;
+        private LineSeries? _signalSeriesB;
+        private HeatMapSeries? _heatmapSeries;
+        private LineSeries? _rmsSeries;
+
         // For PixelChart to track the selected pixel value of cross-correlation matrix over time
         public SeriesCollection? PixelSeriesCollection { get; set; }
         public ChartValues<double> PixelValues { get; set; }
@@ -303,11 +329,14 @@ namespace Quantum_measurement_UI
         private double[]? _lastAccepted64Scaled;     // already scaled, already passed RMS threshold
         private long _lastAcceptedValidFrameIndex;   // validFrames value for that snapshot
         private double[] _latestRawMatrixFrame = new double[64];
-        private double[] _latestOddHeatmapFrame = new double[64];
+        private double[] _latestAcceptedHeatmapFrame = new double[64];
         private double[] _latestReduced49Frame = new double[49];
         private double _lastAcceptedFrameRms = double.NaN;
         private double _lastAcceptedChannel0Amplitude = double.NaN;
         private DateTime _lastMatrixFrameReceivedUtc = DateTime.MinValue;
+        private long _lastBackendFrameTimestampTicks = 0;
+        private double _backendFrameRateFps = 0.0;
+        private double _acceptedFrameRateFps = 0.0;
 
         private StreamWriter experimentLogWriter;
         private StreamWriter motorMetricLogWriter;

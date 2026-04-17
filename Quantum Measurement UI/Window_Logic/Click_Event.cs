@@ -887,11 +887,18 @@ namespace Quantum_measurement_UI
                         item.PhysicalValue = 0;
                         item.History.Clear(); // This clears the 100-point plot
                         item.HistoryBinCounts.Clear();
+                        item.CurrentPositionCumulativeHistory.Clear();
+                        item.CurrentPositionTrackedBin = double.NaN;
+                        item.CurrentPositionAcceptedCount = 0;
+                        item.CurrentPositionRunningAverage = 0.0;
                     }
                 }
 
-                // 3. Clear the active trend plot series
-                SelectedTrendSeries?.Clear();
+                // 3. Clear the active trend plots
+                SelectedTrendPlotModel?.Series.Clear();
+                SelectedTrendPlotModel?.InvalidatePlot(true);
+                SelectedPositionAveragePlotModel?.Series.Clear();
+                SelectedPositionAveragePlotModel?.InvalidatePlot(true);
 
                 // 4. Reset internal cumulative sums and counters
                 if (Cumulative49Channels != null)
@@ -901,9 +908,12 @@ namespace Quantum_measurement_UI
 
                 TotalFramesReceived = 0;
                 TotalFramesSkipped = 0;
+                ResetBackendFrameRateMetrics();
 
                 // 5. Reset UI text
-                SkippedFramesText.Text = "Skipped: 0 / 0 (0.00%) | RMS: 0.00E+00";
+                SkippedFramesText.Text = "Skipped: 0 / 0 (0.00%) | Backend FPS: 0.00 | Accepted FPS: 0.00";
+                SelectedAccumulationText.Text = "Selected accumulation: none";
+                SelectedPositionAverageText.Text = "Single-position cumulative average: none";
 
                 AppendMessage("Matrix Balance and History Plot reset.");
             });
@@ -919,6 +929,8 @@ namespace Quantum_measurement_UI
                 TotalIntegralFrames = 0;
 
                 IntegratedDataHistory?.Clear();
+                _integratedPlotSeries?.Points.Clear();
+                IntegratedPlotModel?.InvalidatePlot(true);
                 IntegralRejectionStatsText.Text = "System Skip Rate: 0 / 0 (0.00%)";
 
                 AppendMessage("Integral Chart synchronized and reset.");

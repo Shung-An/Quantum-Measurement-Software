@@ -205,15 +205,32 @@ namespace Quantum_measurement_UI
                     ChannelBValues?.Clear();
 
                     heatValues?.Clear();
+                    _signalSeriesA?.Points.Clear();
+                    _signalSeriesB?.Points.Clear();
+                    SignalPlotModel?.InvalidatePlot(true);
+                    if (_heatmapSeries != null)
+                    {
+                        _heatmapSeries.Data = new double[8, 8];
+                    }
+                    HeatmapPlotModel?.InvalidatePlot(true);
 
                     MatrixChartValues?.Clear();
                     for (int i = 0; i < 49; i++)
                         MatrixChartValues?.Add(0.0);
                     TotalFramesReceived = 0;
                     TotalFramesSkipped = 0;
+                    ResetBackendFrameRateMetrics();
                     RmsValues?.Clear();
                     for (int i = 0; i < 64; i++)
                         RmsValues?.Add(0.0);
+                    if (_rmsSeries != null)
+                    {
+                        for (int i = 0; i < _rmsSeries.Points.Count; i++)
+                        {
+                            _rmsSeries.Points[i] = new OxyPlot.DataPoint(i, 0.0);
+                        }
+                    }
+                    RmsPlotModel?.InvalidatePlot(true);
 
                     autobalancer?.MotorPositionValues1?.Clear();
                     autobalancer?.MotorPositionValues2?.Clear();
@@ -401,6 +418,14 @@ namespace Quantum_measurement_UI
                     ChannelAValues?.Clear();
                     ChannelBValues?.Clear();
                     heatValues?.Clear();
+                    _signalSeriesA?.Points.Clear();
+                    _signalSeriesB?.Points.Clear();
+                    SignalPlotModel?.InvalidatePlot(true);
+                    if (_heatmapSeries != null)
+                    {
+                        _heatmapSeries.Data = new double[8, 8];
+                    }
+                    HeatmapPlotModel?.InvalidatePlot(true);
                     PixelValues?.Clear();
 
                     // Reset metrics

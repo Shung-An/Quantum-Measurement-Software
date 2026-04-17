@@ -1106,18 +1106,9 @@ namespace Quantum_measurement_UI
         // The event handler that updates the chart when you click rows:
         private void MatrixBalanceTable_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            SelectedTrendSeries.Clear();
-            foreach (var item in MatrixBalanceTable.SelectedItems.Cast<MatrixBalanceItem>())
-            {
-                SelectedTrendSeries.Add(new LineSeries
-                {
-                    Title = $"Ch {item.Channel}",
-                    Values = item.History,
-                    PointGeometry = null,
-                    StrokeThickness = 2,
-                    Fill = Brushes.Transparent
-                });
-            }
+            UpdateSelectedTrendPlot();
+            UpdateSelectedAccumulationSummary();
+            UpdateSelectedPositionAveragePlot();
         }
 
 

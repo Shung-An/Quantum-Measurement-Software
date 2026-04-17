@@ -8,6 +8,19 @@ using System.Windows.Media;
 using System.IO;
 using System.Windows.Threading;
 using System.Diagnostics;
+using OxyAxisPosition = OxyPlot.Axes.AxisPosition;
+using OxyDataPoint = OxyPlot.DataPoint;
+using OxyHeatMapSeries = OxyPlot.Series.HeatMapSeries;
+using OxyLinearAxis = OxyPlot.Axes.LinearAxis;
+using OxyLinearColorAxis = OxyPlot.Axes.LinearColorAxis;
+using OxyLineSeries = OxyPlot.Series.LineSeries;
+using OxyPalette = OxyPlot.OxyPalette;
+using OxyPlotModel = OxyPlot.PlotModel;
+using OxyThickness = OxyPlot.OxyThickness;
+using OxyColors = OxyPlot.OxyColors;
+using OxyColor = OxyPlot.OxyColor;
+using OxyHeatMapRenderMethod = OxyPlot.Series.HeatMapRenderMethod;
+using OxyMarkerType = OxyPlot.MarkerType;
 
 
 using QuantumSqueezingUI;
@@ -28,41 +41,46 @@ namespace Quantum_measurement_UI
         /// </summary>
         private void InitializeSignalChart()
         {
-            // Initialize the chart series
             ChannelAValues = new ChartValues<double>();
             ChannelBValues = new ChartValues<double>();
-
-            SeriesCollection = new SeriesCollection
-            {
-                new LineSeries
-                {
-                    Title = "Channel A",
-                    Values = ChannelAValues,                    // ChannelAValues binded to the Channel A series
-                    PointGeometry = null,
-                    StrokeThickness = 2,
-                    Fill = Brushes.Transparent
-                },
-                new LineSeries
-                {
-                    Title = "Channel B",
-                    Values = ChannelBValues,                    // ChannelBValues binded to the Channel B series
-                    PointGeometry = null,
-                    StrokeThickness = 2,
-                    Fill = Brushes.Transparent
-                }
-            };
-
-            SignalChart.Series = SeriesCollection;            // BIND the SeriesCollection to the SignalChart
-
             int dataPointCount = DataPoints / 2;
-
-
-            // Initialize the ChannelAValues and ChannelBValues with zeros
             for (int i = 0; i < dataPointCount; i++)
             {
                 ChannelAValues.Add(0);
                 ChannelBValues.Add(0);
             }
+
+            _signalSeriesA = new OxyLineSeries
+            {
+                Title = "Channel A",
+                StrokeThickness = 1.5,
+                Color = OxyColors.SteelBlue
+            };
+
+            _signalSeriesB = new OxyLineSeries
+            {
+                Title = "Channel B",
+                StrokeThickness = 1.5,
+                Color = OxyColors.IndianRed
+            };
+
+            SignalPlotModel = new OxyPlotModel
+            {
+                Title = "Signal",
+                IsLegendVisible = true,
+                PlotMargins = new OxyThickness(45, 10, 10, 30)
+            };
+            SignalPlotModel.Axes.Add(new OxyLinearAxis { Position = OxyAxisPosition.Bottom, Title = "Sample Index" });
+            SignalPlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Signal Amplitude (mV)",
+                Minimum = -250,
+                Maximum = 250
+            });
+            SignalPlotModel.Series.Add(_signalSeriesA);
+            SignalPlotModel.Series.Add(_signalSeriesB);
+            SignalPlotView.Model = SignalPlotModel;
         }
 
         /// <summary>
@@ -72,17 +90,60 @@ namespace Quantum_measurement_UI
         {
             heatValues = new ChartValues<HeatPoint>();
             int matrixSize = 8; // Assuming an 8x8 correlation matrix
-            HeatSeries.Values = heatValues; // Set once         // heatValues binded to the HeatSeries
-
-            // Initialize the HeatPoint values
             for (int y = 0; y < matrixSize; y++)        // y is the row index
             {
                 for (int x = 0; x < matrixSize; x++)    // x is the column index
                 {
-                    // Initially set to zero or any default value
                     heatValues.Add(new HeatPoint(x, y, 0.0)); // Add a new HeatPoint to the heatValues in row-major order
                 }
             }
+
+            _heatmapSeries = new OxyHeatMapSeries
+            {
+                X0 = -0.5,
+                X1 = 7.5,
+                Y0 = -0.5,
+                Y1 = 7.5,
+                Interpolate = false,
+                RenderMethod = OxyHeatMapRenderMethod.Bitmap,
+                Data = new double[matrixSize, matrixSize]
+            };
+
+            HeatmapPlotModel = new OxyPlotModel
+            {
+                Title = "Cross Correlation (Accepted Even Frames) | Backend FPS: 0.00 | Accepted FPS: 0.00",
+                PlotMargins = new OxyThickness(45, 10, 60, 30)
+            };
+            HeatmapPlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Column",
+                Minimum = -0.5,
+                Maximum = 7.5,
+                MajorStep = 1,
+                MinorStep = 1
+            });
+            HeatmapPlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Row",
+                Minimum = -0.5,
+                Maximum = 7.5,
+                MajorStep = 1,
+                MinorStep = 1
+            });
+            HeatmapPlotModel.Axes.Add(new OxyLinearColorAxis
+            {
+                Position = OxyAxisPosition.Right,
+                Palette = OxyPalette.Interpolate(5,
+                    OxyColor.Parse("#001f3f"),
+                    OxyColor.Parse("#2c3e50"),
+                    OxyColor.Parse("#444444"),
+                    OxyColor.Parse("#7f1d1d"),
+                    OxyColor.Parse("#b34700"))
+            });
+            HeatmapPlotModel.Series.Add(_heatmapSeries);
+            HeatmapPlotView.Model = HeatmapPlotModel;
         }
 
         private void InitializeSpinNoiseMatrix()
@@ -156,6 +217,79 @@ namespace Quantum_measurement_UI
         }
         private long lastProcessedFrameCount = 0;
 
+        private void InitializeIntegralPlot()
+        {
+            _integratedPlotSeries = new OxyLineSeries
+            {
+                Title = "Integral Sum",
+                Color = OxyColors.Purple,
+                StrokeThickness = 2
+            };
+
+            IntegratedPlotModel = new OxyPlotModel
+            {
+                Title = "Integrated Column Data",
+                PlotMargins = new OxyThickness(45, 10, 10, 30)
+            };
+            IntegratedPlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Time (1s intervals)"
+            });
+            IntegratedPlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Sum Value"
+            });
+            IntegratedPlotModel.Series.Add(_integratedPlotSeries);
+            IntegralPlotView.Model = IntegratedPlotModel;
+        }
+
+        private void InitializeSelectedTrendPlot()
+        {
+            SelectedTrendPlotModel = new OxyPlotModel
+            {
+                Title = "Selected Channel Correlation vs ESP Position",
+                IsLegendVisible = true,
+                PlotMargins = new OxyThickness(45, 10, 10, 30)
+            };
+            SelectedTrendPlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "ESP Position (mm)"
+            });
+            _selectedTrendYAxisModel = new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "μrad²",
+                Minimum = _defaultSelectedTrendYMin,
+                Maximum = _defaultSelectedTrendYMax
+            };
+            SelectedTrendPlotModel.Axes.Add(_selectedTrendYAxisModel);
+            SelectedTrendPlotView.Model = SelectedTrendPlotModel;
+        }
+
+        private void InitializeSelectedPositionAveragePlot()
+        {
+            SelectedPositionAveragePlotModel = new OxyPlotModel
+            {
+                Title = "Selected Channel Cumulative Average At Current Position",
+                IsLegendVisible = true,
+                PlotMargins = new OxyThickness(45, 10, 10, 30)
+            };
+            SelectedPositionAveragePlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Accepted Frames At Current Position"
+            });
+            SelectedPositionAveragePlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Cumulative Average (μrad²)"
+            });
+            SelectedPositionAveragePlotView.Model = SelectedPositionAveragePlotModel;
+        }
+
         private void InitializeAlignmentChart()
         {
             DispatcherTimer integrationTimer = new DispatcherTimer
@@ -188,6 +322,16 @@ namespace Quantum_measurement_UI
                     if (IntegratedDataHistory.Count > 100)
                         IntegratedDataHistory.RemoveAt(0);
 
+                    if (_integratedPlotSeries != null)
+                    {
+                        _integratedPlotSeries.Points.Add(new OxyDataPoint(acceptedValidFrame, integralSum));
+                        if (_integratedPlotSeries.Points.Count > 100)
+                        {
+                            _integratedPlotSeries.Points.RemoveAt(0);
+                        }
+                        IntegratedPlotModel?.InvalidatePlot(true);
+                    }
+
                     lastProcessedFrameCount = acceptedValidFrame;
 
                     TotalIntegralFrames = acceptedValidFrame;
@@ -213,14 +357,48 @@ namespace Quantum_measurement_UI
 
         private void InitializeRmsValues()
         {
-            // FIX: Create actual List<double> for each of the 64 channels
             channelRmsBuffers = new List<double>[64];
             for (int i = 0; i < 64; i++)
             {
-                channelRmsBuffers[i] = new List<double>(RmsWindowSize + 10);  // pre-allocate capacity
+                channelRmsBuffers[i] = new List<double>(RmsWindowSize + 10);
             }
 
-         
+            _rmsSeries = new OxyLineSeries
+            {
+                Title = "RMS Voltage (V)",
+                Color = OxyColors.SteelBlue,
+                StrokeThickness = 1.5,
+                MarkerType = OxyMarkerType.Circle,
+                MarkerSize = 2.5
+            };
+
+            for (int i = 0; i < 64; i++)
+            {
+                _rmsSeries.Points.Add(new OxyDataPoint(i, 0.0));
+            }
+
+            RmsPlotModel = new OxyPlotModel
+            {
+                Title = "RMS Per Channel",
+                PlotMargins = new OxyThickness(45, 10, 10, 45),
+                IsLegendVisible = false
+            };
+            RmsPlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Channel",
+                Minimum = 0,
+                Maximum = 63,
+                MajorStep = 8,
+                MinorStep = 1
+            });
+            RmsPlotModel.Axes.Add(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "RMS Voltage (V)",
+                Minimum = 0
+            });
+            RmsPlotModel.Series.Add(_rmsSeries);
         }
 
 

@@ -1350,6 +1350,16 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 	snprintf(analysisPath, sizeof(analysisPath), "%s\\analysis.txt", experimentLogDirectory);
 	snprintf(profilePath, sizeof(profilePath), "%s\\profile.txt", experimentLogDirectory);
 
+	// The UI pre-creates this directory, but standalone hardware smoke paths may not.
+	// Create the experiment folder here as a defensive fallback before opening output files.
+	if (!CreateDirectoryA(experimentLogDirectory, NULL)) {
+		DWORD dirErr = GetLastError();
+		if (dirErr != ERROR_ALREADY_EXISTS) {
+			fprintf(stderr, "Unable to create experiment directory: %s (err=%lu)\n", experimentLogDirectory, dirErr);
+			ExitThread(1);
+		}
+	}
+
 	// Profiling variables
 		profileFile = fopen(profilePath, "w");
 		if (profileFile == NULL) {
@@ -1885,6 +1895,10 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 						double v0 = (double)p0[i * nChan + calChan0];
 						double v1 = (double)p1[i * nChan + calChan1];
 
+						if (v0 < lo0) lo0 = v0;
+						if (v0 > hi0) hi0 = v0;
+						if (v1 < lo1) lo1 = v1;
+						if (v1 > hi1) hi1 = v1;
 					}
 
 					double thr0 = 0.5 * (lo0 + hi0);
@@ -1937,14 +1951,14 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 					const int triChan = 0;      // Data_1 ch1 (triangle)
 					const int period = 8;      // 8-sample period
 					int tri_peak_frame = -1;
-					double tri_peak_val = 1e30;
+					double tri_peak_val = -1e30;
 
 					// Scan the first 8 frames of Data_1 ch1
 					int maxTriFrames = (nFrames < period) ? nFrames : period;
 					for (int i = 0; i < maxTriFrames; ++i)
 					{
 						double v = (double)p0[i * nChan + triChan];
-						if (v < tri_peak_val)
+						if (v > tri_peak_val)
 						{
 							tri_peak_val = v;
 							tri_peak_frame = i;     // frame index (0..7)
@@ -1987,11 +2001,6 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 
 						SetEvent(g_hStreamAbort[0]);
 						SetEvent(g_hStreamAbort[1]);
-
-						// tell main that this abort wants an automatic restart
-						if (g_hStreamRestart)
-							SetEvent(g_hStreamRestart);
-
 
 						// In case RestartMyself() fails:
 						return 0;
@@ -2209,7 +2218,7 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 
 			if (pCurrentBuffer1 == pBuffer11 && pCurrentBuffer2 == pBuffer21) {
 				d_buffer1 = (void*)(((short*)d_buffer11) );
-				d_buffer2 = (void*)(((short*)d_buffer11) );
+				d_buffer2 = (void*)(((short*)d_buffer21) );
 			}
 
 			else {

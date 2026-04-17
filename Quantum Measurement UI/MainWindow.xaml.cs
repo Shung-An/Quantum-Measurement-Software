@@ -41,6 +41,9 @@ namespace Quantum_measurement_UI
             InitializeRmsValues();         // Initialize RMS buffers
             InitializeDAQCharts();         // Initialize DAQ charts
             InitializeAlignmentChart();         // Initialize alignment chart
+            InitializeIntegralPlot();
+            InitializeSelectedTrendPlot();
+            InitializeSelectedPositionAveragePlot();
 
                                            // Initialize Autobalancer
             autobalancer = new Autobalancer(
