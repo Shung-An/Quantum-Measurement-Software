@@ -403,19 +403,12 @@ namespace Quantum_measurement_UI
                 _lastMatrixFrameReceivedUtc = DateTime.UtcNow;
                 Array.Copy(rawSnapshot, _latestRawMatrixFrame, rawSnapshot.Length);
 
-                // Only even-numbered received events are accepted for accumulation.
-                if (TotalFramesReceived % 2 != 0)
-                {
-                    TotalFramesSkipped++;
-                    return;
-                }
-
-                // Lock the heatmap to the same accepted-frame stream as the matrix balance path.
+                // Use every received frame for the live matrix/heatmap path.
                 Array.Copy(rawSnapshot, _latestAcceptedHeatmapFrame, rawSnapshot.Length);
 
                 TryAnalyzeCorrelationMatrix(rawSnapshot, out double[] current64, out double[] reduced49, out double frameRms, out double channel0Amplitude);
 
-                long validFrames = TotalFramesReceived - TotalFramesSkipped;
+                long validFrames = TotalFramesReceived;
                 _lastAccepted64Scaled = current64;
                 _lastAcceptedValidFrameIndex = validFrames;
                 _lastAcceptedFrameRms = frameRms;
@@ -569,7 +562,7 @@ namespace Quantum_measurement_UI
             _heatmapSeries.Data = heatmapData;
             lock (_acceptedLock)
             {
-                HeatmapPlotModel.Title = $"Cross Correlation (Accepted Even Frames) | Backend FPS: {_backendFrameRateFps:F2} | Accepted FPS: {_acceptedFrameRateFps:F2}";
+                HeatmapPlotModel.Title = $"Cross Correlation | Backend FPS: {_backendFrameRateFps:F2} | Display FPS: {_acceptedFrameRateFps:F2}";
             }
             HeatmapPlotModel.InvalidatePlot(true);
         }
@@ -640,10 +633,10 @@ namespace Quantum_measurement_UI
             // 2. RMS (standard deviation) remains diagnostic-only.
             frame_rms = Math.Sqrt(variance);
 
-            // 3. Channel 0 remains diagnostic-only. Even-parity selection is the only acceptance gate.
+            // 3. Channel 0 remains diagnostic-only.
             channel0Amplitude = sourceMatrix[0] * ScaleFactor;
 
-            // 4. Fetch & scale the 64 channels for accepted even frames.
+            // 4. Fetch & scale the 64 channels for the live processing path.
             current64 = new double[64];
             for (int i = 0; i < 64; i++)
             {
@@ -668,7 +661,7 @@ namespace Quantum_measurement_UI
                 Array.Copy(Cumulative49Channels, cumulativeSnapshot, cumulativeSnapshot.Length);
             }
 
-            long validFrames = totalFramesReceived - totalFramesSkipped;
+            long validFrames = totalFramesReceived;
             if (validFrames <= 0)
             {
                 UpdateSkipStatsUI(totalFramesReceived, totalFramesSkipped);
@@ -708,8 +701,8 @@ namespace Quantum_measurement_UI
             }
 
             SkippedFramesText.Text =
-                $"Skipped: {totalFramesSkipped} / {totalFramesReceived} ({percentSkipped:F2}%)  •  " +
-                $"Backend FPS: {backendFps:F2}  •  Accepted FPS: {acceptedFps:F2}";
+                $"Processed: {totalFramesReceived}  •  " +
+                $"Backend FPS: {backendFps:F2}  •  Display FPS: {acceptedFps:F2}";
         }
 
         private void UpdateSelectedAccumulationSummary()

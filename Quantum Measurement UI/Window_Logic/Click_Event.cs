@@ -911,7 +911,7 @@ namespace Quantum_measurement_UI
                 ResetBackendFrameRateMetrics();
 
                 // 5. Reset UI text
-                SkippedFramesText.Text = "Skipped: 0 / 0 (0.00%) | Backend FPS: 0.00 | Accepted FPS: 0.00";
+                SkippedFramesText.Text = "Processed: 0 | Backend FPS: 0.00 | Display FPS: 0.00";
                 SelectedAccumulationText.Text = "Selected accumulation: none";
                 SelectedPositionAverageText.Text = "Single-position cumulative average: none";
 

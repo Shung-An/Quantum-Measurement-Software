@@ -99,6 +99,24 @@ The **Quantum Measurement UI** project uses WPF (Windows Presentation Foundation
 
 **`MainWindow.xaml.cs`** and **`Window_Logic`**: The **code-behind file** for `MainWindow.xaml`. This C# file implements the logic and functionality for the UI elements defined in `MainWindow.xaml`. Additional window logic is organized in the `Window_Logic` folder. In summary, `MainWindow.xaml` defines the layout and structure, while `MainWindow.xaml.cs` and the files in `Window_Logic` manage the application's interactive behavior and core logic.
 
+#### Recent UI and Analysis Updates
+
+- The live WPF matrix-processing path now uses all received frames by default. The previous even-frame-only accumulation path has been removed from the main heatmap and matrix-balance views.
+- OxyPlot axes used by the live UI are locked against user pan/zoom so fixed display ranges stay stable during acquisition.
+- The **Experiment History** tab now includes direct shortcuts for key generated analysis images:
+  - `loglog_eval.png`
+  - `diagonal_offset_matrix_urad2.png` with fallback to `diagonal_offset_matrix_V2.png`
+  - `fft_result.png`
+  - `raw_std_over_time.png`
+- The browser/history shortcuts open the selected experiment folder assets directly, so users do not need to browse manually in Explorer to inspect these standard outputs.
+
+#### Recent Post-Processing Updates
+
+- The Python post-processing pipeline keeps the running-mean time evaluation on a true log-log plot.
+- Frame gating is disabled by default in the current analysis flow, so all frames and all populated position bins are retained unless the code is explicitly changed.
+- Odd/even parity split outputs were removed from the raw standard deviation review. The pipeline now writes a single combined `raw_std_over_time.png` output.
+- Shot-noise metadata now uses the shot-noise result itself for unit selection: when the shot-noise result is larger than `10000`, it is treated as already being in `V^2`; otherwise it is handled as `urad^2`.
+
 ### 2. GageStreamThruGPU
 
 The **GageStreamThruGPU** directory manages data acquisition and GPU-based processing. It initiates the digitizer for data collection and performs real-time data processing. Key files include:

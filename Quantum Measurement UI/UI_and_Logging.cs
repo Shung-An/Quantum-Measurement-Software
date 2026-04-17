@@ -231,6 +231,97 @@ namespace Quantum_measurement_UI
                 }
             }
         }
+
+        private string? GetSelectedExperimentFolder()
+        {
+            if (HistoryGrid.SelectedItem is not ExperimentRecord record)
+            {
+                MessageBox.Show("Select an experiment first.");
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(record.FullPath) || !File.Exists(record.FullPath))
+            {
+                MessageBox.Show("Experiment path not found. Try refreshing the list.");
+                return null;
+            }
+
+            return Path.GetDirectoryName(record.FullPath);
+        }
+
+        private static bool TryOpenFirstExistingAsset(string folderPath, params string[] fileNames)
+        {
+            foreach (string fileName in fileNames)
+            {
+                string candidate = Path.Combine(folderPath, fileName);
+                if (!File.Exists(candidate))
+                {
+                    continue;
+                }
+
+                Process.Start(new ProcessStartInfo(candidate) { UseShellExecute = true });
+                return true;
+            }
+
+            return false;
+        }
+
+        private void OpenSelectedLoglogEval_Click(object sender, RoutedEventArgs e)
+        {
+            string? folderPath = GetSelectedExperimentFolder();
+            if (folderPath == null)
+            {
+                return;
+            }
+
+            if (!TryOpenFirstExistingAsset(folderPath, "loglog_eval.png"))
+            {
+                MessageBox.Show("Could not find loglog_eval.png in the selected experiment folder.");
+            }
+        }
+
+        private void OpenSelectedDiagonalOffset_Click(object sender, RoutedEventArgs e)
+        {
+            string? folderPath = GetSelectedExperimentFolder();
+            if (folderPath == null)
+            {
+                return;
+            }
+
+            if (!TryOpenFirstExistingAsset(folderPath, "diagonal_offset_matrix_urad2.png", "diagonal_offset_matrix_V2.png"))
+            {
+                MessageBox.Show("Could not find a diagonal offset image in the selected experiment folder.");
+            }
+        }
+
+        private void OpenSelectedFftSpectrum_Click(object sender, RoutedEventArgs e)
+        {
+            string? folderPath = GetSelectedExperimentFolder();
+            if (folderPath == null)
+            {
+                return;
+            }
+
+            if (!TryOpenFirstExistingAsset(folderPath, "fft_result.png"))
+            {
+                MessageBox.Show("Could not find fft_result.png in the selected experiment folder.");
+            }
+        }
+
+        private void OpenSelectedRawStd_Click(object sender, RoutedEventArgs e)
+        {
+            string? folderPath = GetSelectedExperimentFolder();
+            if (folderPath == null)
+            {
+                return;
+            }
+
+            if (!TryOpenFirstExistingAsset(folderPath, "raw_std_over_time.png"))
+            {
+                MessageBox.Show("Could not find raw_std_over_time.png in the selected experiment folder.");
+            }
+        }
+
         private void HistorySearchBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             var query = HistorySearchBox.Text.ToLower();

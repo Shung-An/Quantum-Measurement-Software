@@ -33,6 +33,20 @@ namespace Quantum_measurement_UI
     {
         private const double PositionHistoryBinSizeMm = 0.0001;
 
+        private static OxyLinearAxis CreateLockedLinearAxis(OxyLinearAxis axis)
+        {
+            axis.IsPanEnabled = false;
+            axis.IsZoomEnabled = false;
+            return axis;
+        }
+
+        private static OxyLinearColorAxis CreateLockedLinearColorAxis(OxyLinearColorAxis axis)
+        {
+            axis.IsPanEnabled = false;
+            axis.IsZoomEnabled = false;
+            return axis;
+        }
+
         #region Chart Initialization Functions
 
 
@@ -70,14 +84,14 @@ namespace Quantum_measurement_UI
                 IsLegendVisible = true,
                 PlotMargins = new OxyThickness(45, 10, 10, 30)
             };
-            SignalPlotModel.Axes.Add(new OxyLinearAxis { Position = OxyAxisPosition.Bottom, Title = "Sample Index" });
-            SignalPlotModel.Axes.Add(new OxyLinearAxis
+            SignalPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis { Position = OxyAxisPosition.Bottom, Title = "Sample Index" }));
+            SignalPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Left,
                 Title = "Signal Amplitude (mV)",
                 Minimum = -250,
                 Maximum = 250
-            });
+            }));
             SignalPlotModel.Series.Add(_signalSeriesA);
             SignalPlotModel.Series.Add(_signalSeriesB);
             SignalPlotView.Model = SignalPlotModel;
@@ -111,10 +125,10 @@ namespace Quantum_measurement_UI
 
             HeatmapPlotModel = new OxyPlotModel
             {
-                Title = "Cross Correlation (Accepted Even Frames) | Backend FPS: 0.00 | Accepted FPS: 0.00",
+                Title = "Cross Correlation | Backend FPS: 0.00 | Display FPS: 0.00",
                 PlotMargins = new OxyThickness(45, 10, 60, 30)
             };
-            HeatmapPlotModel.Axes.Add(new OxyLinearAxis
+            HeatmapPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Bottom,
                 Title = "Column",
@@ -122,8 +136,8 @@ namespace Quantum_measurement_UI
                 Maximum = 7.5,
                 MajorStep = 1,
                 MinorStep = 1
-            });
-            HeatmapPlotModel.Axes.Add(new OxyLinearAxis
+            }));
+            HeatmapPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Left,
                 Title = "Row",
@@ -131,8 +145,8 @@ namespace Quantum_measurement_UI
                 Maximum = 7.5,
                 MajorStep = 1,
                 MinorStep = 1
-            });
-            HeatmapPlotModel.Axes.Add(new OxyLinearColorAxis
+            }));
+            HeatmapPlotModel.Axes.Add(CreateLockedLinearColorAxis(new OxyLinearColorAxis
             {
                 Position = OxyAxisPosition.Right,
                 Palette = OxyPalette.Interpolate(5,
@@ -141,7 +155,7 @@ namespace Quantum_measurement_UI
                     OxyColor.Parse("#444444"),
                     OxyColor.Parse("#7f1d1d"),
                     OxyColor.Parse("#b34700"))
-            });
+            }));
             HeatmapPlotModel.Series.Add(_heatmapSeries);
             HeatmapPlotView.Model = HeatmapPlotModel;
         }
@@ -231,16 +245,16 @@ namespace Quantum_measurement_UI
                 Title = "Integrated Column Data",
                 PlotMargins = new OxyThickness(45, 10, 10, 30)
             };
-            IntegratedPlotModel.Axes.Add(new OxyLinearAxis
+            IntegratedPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Bottom,
                 Title = "Time (1s intervals)"
-            });
-            IntegratedPlotModel.Axes.Add(new OxyLinearAxis
+            }));
+            IntegratedPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Left,
                 Title = "Sum Value"
-            });
+            }));
             IntegratedPlotModel.Series.Add(_integratedPlotSeries);
             IntegralPlotView.Model = IntegratedPlotModel;
         }
@@ -253,18 +267,18 @@ namespace Quantum_measurement_UI
                 IsLegendVisible = true,
                 PlotMargins = new OxyThickness(45, 10, 10, 30)
             };
-            SelectedTrendPlotModel.Axes.Add(new OxyLinearAxis
+            SelectedTrendPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Bottom,
                 Title = "ESP Position (mm)"
-            });
-            _selectedTrendYAxisModel = new OxyLinearAxis
+            }));
+            _selectedTrendYAxisModel = CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Left,
                 Title = "μrad²",
                 Minimum = _defaultSelectedTrendYMin,
                 Maximum = _defaultSelectedTrendYMax
-            };
+            });
             SelectedTrendPlotModel.Axes.Add(_selectedTrendYAxisModel);
             SelectedTrendPlotView.Model = SelectedTrendPlotModel;
         }
@@ -277,16 +291,16 @@ namespace Quantum_measurement_UI
                 IsLegendVisible = true,
                 PlotMargins = new OxyThickness(45, 10, 10, 30)
             };
-            SelectedPositionAveragePlotModel.Axes.Add(new OxyLinearAxis
+            SelectedPositionAveragePlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Bottom,
                 Title = "Accepted Frames At Current Position"
-            });
-            SelectedPositionAveragePlotModel.Axes.Add(new OxyLinearAxis
+            }));
+            SelectedPositionAveragePlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Left,
                 Title = "Cumulative Average (μrad²)"
-            });
+            }));
             SelectedPositionAveragePlotView.Model = SelectedPositionAveragePlotModel;
         }
 
@@ -310,7 +324,7 @@ namespace Quantum_measurement_UI
 
                 if (accepted64 == null) return;
 
-                // Only update if we have a NEW accepted frame since last tick
+                // Only update if we have a new processed frame since last tick.
                 if (acceptedValidFrame > lastProcessedFrameCount)
                 {
                     // IMPORTANT: indices are for 8x8 diagonal-like positions in 64 array
@@ -345,14 +359,14 @@ namespace Quantum_measurement_UI
 
         private void UpdateRejectionUI()
         {
-            // Follow the global skip rate from your main data update logic
+            // Mirror the live matrix processing counters in the integral stats view.
             long total = TotalFramesReceived;
             long skipped = TotalFramesSkipped;
 
             if (total == 0) return;
 
             double skipRate = (double)skipped / total * 100.0;
-            IntegralRejectionStatsText.Text = $"System Skip Rate: {skipped} / {total} ({skipRate:F2}%)";
+            IntegralRejectionStatsText.Text = $"Processed Frames: {total} | Skipped: {skipped} ({skipRate:F2}%)";
         }
 
         private void InitializeRmsValues()
@@ -383,7 +397,7 @@ namespace Quantum_measurement_UI
                 PlotMargins = new OxyThickness(45, 10, 10, 45),
                 IsLegendVisible = false
             };
-            RmsPlotModel.Axes.Add(new OxyLinearAxis
+            RmsPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Bottom,
                 Title = "Channel",
@@ -391,13 +405,13 @@ namespace Quantum_measurement_UI
                 Maximum = 63,
                 MajorStep = 8,
                 MinorStep = 1
-            });
-            RmsPlotModel.Axes.Add(new OxyLinearAxis
+            }));
+            RmsPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
             {
                 Position = OxyAxisPosition.Left,
                 Title = "RMS Voltage (V)",
                 Minimum = 0
-            });
+            }));
             RmsPlotModel.Series.Add(_rmsSeries);
         }
 
