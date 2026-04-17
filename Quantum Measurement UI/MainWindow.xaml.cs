@@ -37,8 +37,14 @@ namespace Quantum_measurement_UI
             // Initialize charts
             InitializeSignalChart();         // Initialize the signal chart data                                          
             InitializeHeatValues();         // Initialize heatmap values (8x8 grid)
-            InitializePixelChart();         // Initialize pixel chart of selected pixel of cross correlation matrix over time
+            InitializeSpinNoiseMatrix();         // Initialize pixel chart of selected pixel of cross correlation matrix over time
+            InitializeRmsValues();         // Initialize RMS buffers
             InitializeDAQCharts();         // Initialize DAQ charts
+            InitializeAlignmentChart();         // Initialize alignment chart
+            InitializeIntegralPlot();
+            InitializeSelectedTrendPlot();
+            InitializeSelectedPositionAveragePlot();
+
                                            // Initialize Autobalancer
             autobalancer = new Autobalancer(
                 motorController,
@@ -70,6 +76,21 @@ namespace Quantum_measurement_UI
         private void TextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
 
+        }
+
+        private void ApplySelectedTrendScale_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetSelectedTrendScale(out double minValue, out double maxValue))
+                return;
+
+            SetSelectedTrendScale(minValue, maxValue);
+        }
+
+        private void AutoScaleSelectedTrend_Click(object sender, RoutedEventArgs e)
+        {
+            SetSelectedTrendScale(double.NaN, double.NaN);
+            SelectedTrendYMinTextBox.Text = _defaultSelectedTrendYMin.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+            SelectedTrendYMaxTextBox.Text = _defaultSelectedTrendYMax.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
         }
     }
 }

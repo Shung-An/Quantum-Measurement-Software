@@ -35,6 +35,8 @@ namespace Quantum_measurement_UI
         private double currentMetricB;
         private int currentMotor1Position;
         private int currentMotor2Position;
+        private double previousDiffM1 = double.NaN;
+        private double previousDiffM2 = double.NaN;
 
         // Direction that reduces a *positive* metric for each channel. Flip on the bench if needed.
         public int A_PosMetricReduceDir = +1; // motor 1
@@ -74,7 +76,7 @@ namespace Quantum_measurement_UI
 
         public void Start(double threshold, int numsegments)
         {
-
+            const int maxTuningRuns = 3;
 
             if (IsRunning)
             {
@@ -91,6 +93,7 @@ namespace Quantum_measurement_UI
                 try
                 {
                     var token = autobalanceCancellationTokenSource.Token;
+                    int tuningRunsCompleted = 0;
 
                     while (!token.IsCancellationRequested)
                     {
@@ -102,7 +105,30 @@ namespace Quantum_measurement_UI
                         // Stay active the whole window
                         while (isTimeToBalance() && !token.IsCancellationRequested)
                         {
-                            await RunSingleSessionMinimize(numsegments, token, threshold);
+                            bool balanced = await RunSingleSessionMinimize(numsegments, token, threshold);
+                            tuningRunsCompleted++;
+
+                            if (balanced)
+                            {
+                                dispatcher.Invoke(() =>
+                                {
+                                    mainWindow.AppendMessage("[AutoBalance] Balance reached. Stopping single-session autobalance.");
+                                    mainWindow.LogExperimentEvent("[AutoBalance] Balance reached. Stopping single-session autobalance.");
+                                });
+                                autobalanceCancellationTokenSource?.Cancel();
+                                break;
+                            }
+
+                            if (tuningRunsCompleted >= maxTuningRuns)
+                            {
+                                dispatcher.Invoke(() =>
+                                {
+                                    mainWindow.AppendMessage($"[AutoBalance] Reached {maxTuningRuns} tuning runs. Stopping autobalance.");
+                                    mainWindow.LogExperimentEvent($"[AutoBalance] Reached {maxTuningRuns} tuning runs. Stopping autobalance.");
+                                });
+                                autobalanceCancellationTokenSource?.Cancel();
+                                break;
+                            }
 
                             // Optional: small delay between sweeps to avoid thrashing
                             await Task.Delay(75, token);
@@ -152,72 +178,144 @@ namespace Quantum_measurement_UI
         }
 
 
-        private async Task RunSingleSessionMinimize(int numsegments, CancellationToken cancellationToken, double threshold)
+        private async Task<bool> RunSingleSessionMinimize(int numsegments, CancellationToken cancellationToken, double threshold)
         {
             dispatcher.Invoke(() =>
             {
                 mainWindow.LogExperimentEvent("[AutoBalance] Coarse tuning session started.");
             });
 
-            const double tolerance = 0.00005; // volts
-            const int maxStep = 50;        // max motor steps in one move
-            const double coarseFactor = 800; // volts-to-steps for large errors
-            const double fineFactor = 800;  // volts-to-steps for small errors
+            double tolerance = threshold > 0 ? threshold : 0.005;
+            const int sampleSize = 12;
+            const int maxIterationsPerSession = 10;
+            const int maxTotalSessionTravelPerMotor = 24;
+            const int settleDelayMs = 400;
 
-            while (!cancellationToken.IsCancellationRequested && isTimeToBalance())
+            int sessionTravelMotor1 = 0;
+            int sessionTravelMotor2 = 0;
+            int iteration = 0;
+            bool reachedBalance = false;
+
+            while (!cancellationToken.IsCancellationRequested &&
+                   isTimeToBalance() &&
+                   iteration < maxIterationsPerSession)
             {
-                // Guard against empty DAQ buffers
-                if (mainWindow.DAQChannel1Values.Count == 0 ||
-                    mainWindow.DAQChannel2Values.Count == 0 ||
-                    mainWindow.DAQChannel3Values.Count == 0 ||
-                    mainWindow.DAQChannel4Values.Count == 0)
+                // Guard against empty or insufficiently filled DAQ buffers
+                if (mainWindow.DAQChannel1Values.Count < sampleSize ||
+                    mainWindow.DAQChannel2Values.Count < sampleSize ||
+                    mainWindow.DAQChannel3Values.Count < sampleSize ||
+                    mainWindow.DAQChannel4Values.Count < sampleSize)
                 {
                     await Task.Delay(100, cancellationToken);
                     continue;
                 }
-                // === Step 1: Calculate voltage differences ===
-                double diffM1 = mainWindow.DAQChannel1Values[^1] - mainWindow.DAQChannel2Values[^1];
-                double diffM2 = mainWindow.DAQChannel3Values[^1] - mainWindow.DAQChannel4Values[^1];
+
+                // === Step 1: Calculate smoothed voltage differences ===
+                // Averages the last N values to reject high-frequency noise
+                double ch1Avg = mainWindow.DAQChannel1Values.TakeLast(sampleSize).Average();
+                double ch2Avg = mainWindow.DAQChannel2Values.TakeLast(sampleSize).Average();
+                double ch3Avg = mainWindow.DAQChannel3Values.TakeLast(sampleSize).Average();
+                double ch4Avg = mainWindow.DAQChannel4Values.TakeLast(sampleSize).Average();
+
+                double diffM1 = ch1Avg - ch2Avg;
+                double diffM2 = ch3Avg - ch4Avg;
+                currentMetricA = diffM1;
+                currentMetricB = diffM2;
+
+                dispatcher.Invoke(() =>
+                {
+                    mainWindow.PowerDiffCh1.Text = diffM1.ToString("F4");
+                    mainWindow.PowerDiffCh2.Text = diffM2.ToString("F4");
+                });
+
+                motorController.GetCurrentPosition(1, out currentMotor1Position);
+                motorController.GetCurrentPosition(2, out currentMotor2Position);
+                UpdateChartData();
+
+                bool movedMotor = false;
+
+                if (Math.Abs(diffM1) <= tolerance && Math.Abs(diffM2) <= tolerance)
+                {
+                    reachedBalance = true;
+                    break;
+                }
 
                 // === Step 2: Motor 1 ===
-                // Motor 1
-                if (Math.Abs(diffM1) > tolerance)
+                if (Math.Abs(diffM1) > tolerance && sessionTravelMotor1 < maxTotalSessionTravelPerMotor)
                 {
-                    double factor = Math.Abs(diffM1) > 0.01 ? coarseFactor : fineFactor;
-                    int step1 = (int)Math.Min(maxStep, Math.Abs(diffM1) * factor);
-                    int dir1 = diffM1 > 0 ? 1 : -1;
+                    int step1 = ComputeDampedStep(diffM1, tolerance, previousDiffM1, maxTotalSessionTravelPerMotor - sessionTravelMotor1);
+                    int dir1 = diffM1 > 0 ? -1 : 1;
+                    motorController.CheckForErrors();
 
-                    dispatcher.Invoke(() =>
-                    {
-                        mainWindow.PowerDiffCh1.Text = diffM1.ToString("F4");
-                    }); 
-                    motorController.CheckForErrors(); // skip or throw if error detected
                     await SafeMoveMotor(1, step1 * dir1, cancellationToken);
-                    await WaitForMotorReady(1, cancellationToken);
+                    sessionTravelMotor1 += step1;
+                    movedMotor = true;
                 }
 
-                // Motor 2
-                if (Math.Abs(diffM2) > tolerance)
+                // === Step 3: Motor 2 ===
+                if (Math.Abs(diffM2) > tolerance && sessionTravelMotor2 < maxTotalSessionTravelPerMotor)
                 {
-                    double factor = Math.Abs(diffM2) > 0.01 ? coarseFactor : fineFactor;
-                    int step2 = (int)Math.Min(maxStep, Math.Abs(diffM2) * factor);
-                    int dir2 = diffM2 > 0 ? -1 : 1;
-                    dispatcher.Invoke(() =>
-                    {
-                        mainWindow.PowerDiffCh2.Text = diffM2.ToString("F4");
-                    });
-                    motorController.CheckForErrors(); // skip or throw if error detected
+                    int step2 = ComputeDampedStep(diffM2, tolerance, previousDiffM2, maxTotalSessionTravelPerMotor - sessionTravelMotor2);
+                    int dir2 = diffM2 > 0 ? 1 : -1;
+                    motorController.CheckForErrors();
+
                     await SafeMoveMotor(2, step2 * dir2, cancellationToken);
-                    await WaitForMotorReady(2, cancellationToken);
+                    sessionTravelMotor2 += step2;
+                    movedMotor = true;
                 }
 
-                await Task.Delay(100, cancellationToken);
+                previousDiffM1 = diffM1;
+                previousDiffM2 = diffM2;
+                iteration++;
+
+                // === Step 4: Settling Time ===
+                // If we moved a motor, we must wait long enough for the DAQ to capture the physical change
+                if (movedMotor)
+                {
+                    await Task.Delay(settleDelayMs, cancellationToken);
+                }
+                else
+                {
+                    break;
+                }
             }
+
             dispatcher.Invoke(() =>
             {
-                mainWindow.LogExperimentEvent("[AutoBalance] Coarse tuning session ended.");
+                string outcome = reachedBalance ? "balanced" : "stopped";
+                mainWindow.LogExperimentEvent($"[AutoBalance] Session {outcome} after {iteration} passes. Travel M1={sessionTravelMotor1}, M2={sessionTravelMotor2}.");
             });
+
+            return reachedBalance;
         }
+
+        private static int ComputeDampedStep(double diff, double tolerance, double previousDiff, int remainingTravelBudget)
+        {
+            double normalizedError = Math.Abs(diff) / Math.Max(tolerance, 1e-6);
+
+            int step = normalizedError switch
+            {
+                > 8.0 => 4,
+                > 4.0 => 3,
+                > 2.0 => 2,
+                _ => 1
+            };
+
+            // If the metric is already shrinking, keep the controller gentle instead of pushing harder.
+            if (!double.IsNaN(previousDiff) && Math.Abs(diff) < Math.Abs(previousDiff))
+            {
+                step = Math.Max(1, step - 1);
+            }
+
+            // If we crossed zero, take the smallest possible corrective move.
+            if (!double.IsNaN(previousDiff) && Math.Sign(diff) != Math.Sign(previousDiff))
+            {
+                step = 1;
+            }
+
+            return Math.Max(1, Math.Min(step, Math.Max(1, remainingTravelBudget)));
+        }
+
 
         private async Task SafeMoveMotor(int motorNumber, int steps, CancellationToken token)
         {

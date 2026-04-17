@@ -1,13 +1,28 @@
 ﻿using LiveCharts;
 using LiveCharts.Defaults;
 using LiveCharts.Wpf;
+using LiveCharts.Configurations;
 using System.IO.Pipes;
 using System.Windows;
 using System.Windows.Media;
 using System.IO;
 using System.Windows.Threading;
 using System.Diagnostics;
-using System.Windows.Controls;
+using OxyAxisPosition = OxyPlot.Axes.AxisPosition;
+using OxyDataPoint = OxyPlot.DataPoint;
+using OxyHeatMapSeries = OxyPlot.Series.HeatMapSeries;
+using OxyLinearAxis = OxyPlot.Axes.LinearAxis;
+using OxyLinearColorAxis = OxyPlot.Axes.LinearColorAxis;
+using OxyLineSeries = OxyPlot.Series.LineSeries;
+using OxyPalette = OxyPlot.OxyPalette;
+using OxyPlotModel = OxyPlot.PlotModel;
+using OxyThickness = OxyPlot.OxyThickness;
+using OxyColors = OxyPlot.OxyColors;
+using OxyColor = OxyPlot.OxyColor;
+using OxyHeatMapRenderMethod = OxyPlot.Series.HeatMapRenderMethod;
+using OxyMarkerType = OxyPlot.MarkerType;
+
+
 using QuantumSqueezingUI;
 using System.Collections.ObjectModel;
 
@@ -16,47 +31,70 @@ namespace Quantum_measurement_UI
 {
     public partial class MainWindow : Window
     {
+        private const double PositionHistoryBinSizeMm = 0.0001;
+
+        private static OxyLinearAxis CreateLockedLinearAxis(OxyLinearAxis axis)
+        {
+            axis.IsPanEnabled = false;
+            axis.IsZoomEnabled = false;
+            return axis;
+        }
+
+        private static OxyLinearColorAxis CreateLockedLinearColorAxis(OxyLinearColorAxis axis)
+        {
+            axis.IsPanEnabled = false;
+            axis.IsZoomEnabled = false;
+            return axis;
+        }
+
         #region Chart Initialization Functions
+
 
         /// <summary>
         /// Initializes the signal chart data with zeros.
         /// </summary>
         private void InitializeSignalChart()
         {
-            // Initialize the chart series
             ChannelAValues = new ChartValues<double>();
             ChannelBValues = new ChartValues<double>();
-
-            SeriesCollection = new SeriesCollection
-            {
-                new LineSeries
-                {
-                    Title = "Channel A",
-                    Values = ChannelAValues,                    // ChannelAValues binded to the Channel A series
-                    PointGeometry = null,
-                    StrokeThickness = 2,
-                    Fill = Brushes.Transparent
-                },
-                new LineSeries
-                {
-                    Title = "Channel B",
-                    Values = ChannelBValues,                    // ChannelBValues binded to the Channel B series
-                    PointGeometry = null,
-                    StrokeThickness = 2,
-                    Fill = Brushes.Transparent
-                }
-            };
-
-            SignalChart.Series = SeriesCollection;            // BIND the SeriesCollection to the SignalChart
-
             int dataPointCount = DataPoints / 2;
-
-            // Initialize the ChannelAValues and ChannelBValues with zeros
             for (int i = 0; i < dataPointCount; i++)
             {
                 ChannelAValues.Add(0);
                 ChannelBValues.Add(0);
             }
+
+            _signalSeriesA = new OxyLineSeries
+            {
+                Title = "Channel A",
+                StrokeThickness = 1.5,
+                Color = OxyColors.SteelBlue
+            };
+
+            _signalSeriesB = new OxyLineSeries
+            {
+                Title = "Channel B",
+                StrokeThickness = 1.5,
+                Color = OxyColors.IndianRed
+            };
+
+            SignalPlotModel = new OxyPlotModel
+            {
+                Title = "Signal",
+                IsLegendVisible = true,
+                PlotMargins = new OxyThickness(45, 10, 10, 30)
+            };
+            SignalPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis { Position = OxyAxisPosition.Bottom, Title = "Sample Index" }));
+            SignalPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Signal Amplitude (mV)",
+                Minimum = -250,
+                Maximum = 250
+            }));
+            SignalPlotModel.Series.Add(_signalSeriesA);
+            SignalPlotModel.Series.Add(_signalSeriesB);
+            SignalPlotView.Model = SignalPlotModel;
         }
 
         /// <summary>
@@ -66,39 +104,317 @@ namespace Quantum_measurement_UI
         {
             heatValues = new ChartValues<HeatPoint>();
             int matrixSize = 8; // Assuming an 8x8 correlation matrix
-            HeatSeries.Values = heatValues; // Set once         // heatValues binded to the HeatSeries
-
-            // Initialize the HeatPoint values
             for (int y = 0; y < matrixSize; y++)        // y is the row index
             {
                 for (int x = 0; x < matrixSize; x++)    // x is the column index
                 {
-                    // Initially set to zero or any default value
                     heatValues.Add(new HeatPoint(x, y, 0.0)); // Add a new HeatPoint to the heatValues in row-major order
                 }
             }
+
+            _heatmapSeries = new OxyHeatMapSeries
+            {
+                X0 = -0.5,
+                X1 = 7.5,
+                Y0 = -0.5,
+                Y1 = 7.5,
+                Interpolate = false,
+                RenderMethod = OxyHeatMapRenderMethod.Bitmap,
+                Data = new double[matrixSize, matrixSize]
+            };
+
+            HeatmapPlotModel = new OxyPlotModel
+            {
+                Title = "Cross Correlation | Backend FPS: 0.00 | Display FPS: 0.00",
+                PlotMargins = new OxyThickness(45, 10, 60, 30)
+            };
+            HeatmapPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Column",
+                Minimum = -0.5,
+                Maximum = 7.5,
+                MajorStep = 1,
+                MinorStep = 1
+            }));
+            HeatmapPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Row",
+                Minimum = -0.5,
+                Maximum = 7.5,
+                MajorStep = 1,
+                MinorStep = 1
+            }));
+            HeatmapPlotModel.Axes.Add(CreateLockedLinearColorAxis(new OxyLinearColorAxis
+            {
+                Position = OxyAxisPosition.Right,
+                Palette = OxyPalette.Interpolate(5,
+                    OxyColor.Parse("#001f3f"),
+                    OxyColor.Parse("#2c3e50"),
+                    OxyColor.Parse("#444444"),
+                    OxyColor.Parse("#7f1d1d"),
+                    OxyColor.Parse("#b34700"))
+            }));
+            HeatmapPlotModel.Series.Add(_heatmapSeries);
+            HeatmapPlotView.Model = HeatmapPlotModel;
         }
 
-        /// <summary>
-        /// Initializes the pixel chart for the selected pixel of the cross-correlation matrix over time.
-        /// </summary>
-        private void InitializePixelChart()
+        private void InitializeSpinNoiseMatrix()
         {
-            PixelValues = new ChartValues<double>();            // Initialize the PixelValues series
-            PixelSeriesCollection = new SeriesCollection
+            // 1. Define your threshold colors
+            var balancedColor = new SolidColorBrush(Color.FromRgb(31, 119, 180)); // Blue
+            var warningColor = new SolidColorBrush(Color.FromRgb(214, 39, 40));   // Red
+
+            // 2. Set the tolerance threshold (e.g., 0.005V)
+            double tolerance = 0.005;
+
+            // 3. Create the dynamic Mapper for LiveCharts
+            BalanceMapper = Mappers.Xy<double>()
+                .X((value, index) => index)  // X-axis is the bar index (1 to 49)
+                .Y(value => value)           // Y-axis is the actual voltage difference
+                .Fill(value => Math.Abs(value) > tolerance ? warningColor : balancedColor);
+
+            MatrixTableData.Clear();
+            for (int i = 1; i <= 49; i++)
             {
-                new LineSeries
+                MatrixTableData.Add(new MatrixBalanceItem { Channel = i, Value = 0.0 });
+            }
+
+            // 4. Initialize the 49-channel arrays with zeros
+            MatrixChartValues = new ChartValues<double>(new double[49]);
+            MatrixChartLabels = Enumerable.Range(1, 49).Select(i => i.ToString()).ToArray();
+            // Change this line:
+            historyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) }; // <--- Set to 1 second
+
+            historyTimer.Tick += (s, e) => {
+                double position = System.Threading.Volatile.Read(ref currentESPPosition);
+                if (double.IsNaN(position))
                 {
-                    Title = "Selected Pixel",
-                    Values = PixelValues,                      // pixelValues binded to the Selected Pixel series
-                    PointGeometry = null,
-                    StrokeThickness = 2,
-                    Fill = Brushes.Transparent
+                    return;
+                }
+
+                foreach (var item in MatrixTableData)
+                {
+                    UpdateHistoryAtPosition(item, position, item.PhysicalValue);
+                }
+            };
+            historyTimer.Start();
+
+            // 5. Ensure the XAML can find these properties
+            DataContext = this;
+        }
+
+        private void UpdateHistoryAtPosition(MatrixBalanceItem item, double position, double value)
+        {
+            double binnedPosition = Math.Round(position / PositionHistoryBinSizeMm) * PositionHistoryBinSizeMm;
+
+            for (int i = 0; i < item.History.Count; i++)
+            {
+                if (Math.Abs(item.History[i].X - binnedPosition) < 1e-9)
+                {
+                    int count = item.HistoryBinCounts.TryGetValue(binnedPosition, out int existingCount) ? existingCount : 1;
+                    item.History[i].Y = ((item.History[i].Y * count) + value) / (count + 1);
+                    item.HistoryBinCounts[binnedPosition] = count + 1;
+                    return;
+                }
+            }
+
+            int insertIndex = 0;
+            while (insertIndex < item.History.Count && item.History[insertIndex].X < binnedPosition)
+            {
+                insertIndex++;
+            }
+
+            item.History.Insert(insertIndex, new ObservablePoint(binnedPosition, value));
+            item.HistoryBinCounts[binnedPosition] = 1;
+        }
+        private long lastProcessedFrameCount = 0;
+
+        private void InitializeIntegralPlot()
+        {
+            _integratedPlotSeries = new OxyLineSeries
+            {
+                Title = "Integral Sum",
+                Color = OxyColors.Purple,
+                StrokeThickness = 2
+            };
+
+            IntegratedPlotModel = new OxyPlotModel
+            {
+                Title = "Integrated Column Data",
+                PlotMargins = new OxyThickness(45, 10, 10, 30)
+            };
+            IntegratedPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Time (1s intervals)"
+            }));
+            IntegratedPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Sum Value"
+            }));
+            IntegratedPlotModel.Series.Add(_integratedPlotSeries);
+            IntegralPlotView.Model = IntegratedPlotModel;
+        }
+
+        private void InitializeSelectedTrendPlot()
+        {
+            SelectedTrendPlotModel = new OxyPlotModel
+            {
+                Title = "Selected Channel Correlation vs ESP Position",
+                IsLegendVisible = true,
+                PlotMargins = new OxyThickness(45, 10, 10, 30)
+            };
+            SelectedTrendPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "ESP Position (mm)"
+            }));
+            _selectedTrendYAxisModel = CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "μrad²",
+                Minimum = _defaultSelectedTrendYMin,
+                Maximum = _defaultSelectedTrendYMax
+            });
+            SelectedTrendPlotModel.Axes.Add(_selectedTrendYAxisModel);
+            SelectedTrendPlotView.Model = SelectedTrendPlotModel;
+        }
+
+        private void InitializeSelectedPositionAveragePlot()
+        {
+            SelectedPositionAveragePlotModel = new OxyPlotModel
+            {
+                Title = "Selected Channel Cumulative Average At Current Position",
+                IsLegendVisible = true,
+                PlotMargins = new OxyThickness(45, 10, 10, 30)
+            };
+            SelectedPositionAveragePlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Accepted Frames At Current Position"
+            }));
+            SelectedPositionAveragePlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Cumulative Average (μrad²)"
+            }));
+            SelectedPositionAveragePlotView.Model = SelectedPositionAveragePlotModel;
+        }
+
+        private void InitializeAlignmentChart()
+        {
+            DispatcherTimer integrationTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+
+            integrationTimer.Tick += (s, e) =>
+            {
+                double[]? accepted64;
+                long acceptedValidFrame;
+
+                lock (_acceptedLock)
+                {
+                    accepted64 = _lastAccepted64Scaled;
+                    acceptedValidFrame = _lastAcceptedValidFrameIndex;
+                }
+
+                if (accepted64 == null) return;
+
+                // Only update if we have a new processed frame since last tick.
+                if (acceptedValidFrame > lastProcessedFrameCount)
+                {
+                    // IMPORTANT: indices are for 8x8 diagonal-like positions in 64 array
+                    double integralSum =
+                       ( accepted64[1] + accepted64[9] + accepted64[17] + accepted64[25] +
+                        accepted64[33] + accepted64[41] + accepted64[49] + accepted64[57]) / 0.00000732421;
+
+                    IntegratedDataHistory.Add(integralSum);
+                    if (IntegratedDataHistory.Count > 100)
+                        IntegratedDataHistory.RemoveAt(0);
+
+                    if (_integratedPlotSeries != null)
+                    {
+                        _integratedPlotSeries.Points.Add(new OxyDataPoint(acceptedValidFrame, integralSum));
+                        if (_integratedPlotSeries.Points.Count > 100)
+                        {
+                            _integratedPlotSeries.Points.RemoveAt(0);
+                        }
+                        IntegratedPlotModel?.InvalidatePlot(true);
+                    }
+
+                    lastProcessedFrameCount = acceptedValidFrame;
+
+                    TotalIntegralFrames = acceptedValidFrame;
+                    UpdateRejectionUI();
                 }
             };
 
-            PixelChart.Series = PixelSeriesCollection;          // BIND the PixelSeriesCollection to the PixelChart
+            integrationTimer.Start();
         }
+
+
+        private void UpdateRejectionUI()
+        {
+            // Mirror the live matrix processing counters in the integral stats view.
+            long total = TotalFramesReceived;
+            long skipped = TotalFramesSkipped;
+
+            if (total == 0) return;
+
+            double skipRate = (double)skipped / total * 100.0;
+            IntegralRejectionStatsText.Text = $"Processed Frames: {total} | Skipped: {skipped} ({skipRate:F2}%)";
+        }
+
+        private void InitializeRmsValues()
+        {
+            channelRmsBuffers = new List<double>[64];
+            for (int i = 0; i < 64; i++)
+            {
+                channelRmsBuffers[i] = new List<double>(RmsWindowSize + 10);
+            }
+
+            _rmsSeries = new OxyLineSeries
+            {
+                Title = "RMS Voltage (V)",
+                Color = OxyColors.SteelBlue,
+                StrokeThickness = 1.5,
+                MarkerType = OxyMarkerType.Circle,
+                MarkerSize = 2.5
+            };
+
+            for (int i = 0; i < 64; i++)
+            {
+                _rmsSeries.Points.Add(new OxyDataPoint(i, 0.0));
+            }
+
+            RmsPlotModel = new OxyPlotModel
+            {
+                Title = "RMS Per Channel",
+                PlotMargins = new OxyThickness(45, 10, 10, 45),
+                IsLegendVisible = false
+            };
+            RmsPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Channel",
+                Minimum = 0,
+                Maximum = 63,
+                MajorStep = 8,
+                MinorStep = 1
+            }));
+            RmsPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "RMS Voltage (V)",
+                Minimum = 0
+            }));
+            RmsPlotModel.Series.Add(_rmsSeries);
+        }
+
 
         /// <summary>
         /// Initializes the charts used in the Autobalance feature.

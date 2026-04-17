@@ -1,0 +1,6 @@
+//////
+Buffer size (Samples)
+1048576
+Sampling Rate (Hz)
+1000000000
+///

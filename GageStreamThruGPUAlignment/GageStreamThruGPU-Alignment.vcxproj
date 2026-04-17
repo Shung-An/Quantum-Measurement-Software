@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{3114D922-5CB9-4BBC-867F-FB15E1D9C2AF}</ProjectGuid>
+    <ProjectGuid>{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}</ProjectGuid>
     <RootNamespace>GageGPU_Stream</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>GageStreamThruGPU</ProjectName>

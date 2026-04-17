@@ -9,6 +9,14 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GageStreamThruGPU", "GageSt
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuantumDAQService", "QuantumDAQService\QuantumDAQService.csproj", "{3DE2CB80-524F-4748-A9A7-9E1C155ACC65}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GageStreamThruGPUAlignment", "GageStreamThruGPUAlignment\GageStreamThruGPU-Alignment.vcxproj", "{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GageStreamThruGPU.Tests", "GageStreamThruGPU.Tests\GageStreamThruGPU.Tests.vcxproj", "{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GageStreamThruGPU.WorkflowDemo", "GageStreamThruGPU.WorkflowDemo\GageStreamThruGPU.WorkflowDemo.vcxproj", "{3938C7B3-85F1-4368-B622-428655625C36}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GageStreamThruGPU.HardwareSmoke", "GageStreamThruGPU.HardwareSmoke\GageStreamThruGPU.HardwareSmoke.csproj", "{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +49,38 @@ Global
 		{3DE2CB80-524F-4748-A9A7-9E1C155ACC65}.Release|Any CPU.Build.0 = Release|Any CPU
 		{3DE2CB80-524F-4748-A9A7-9E1C155ACC65}.Release|x64.ActiveCfg = Release|Any CPU
 		{3DE2CB80-524F-4748-A9A7-9E1C155ACC65}.Release|x64.Build.0 = Release|Any CPU
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Debug|Any CPU.Build.0 = Debug|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Debug|x64.ActiveCfg = Debug|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Debug|x64.Build.0 = Debug|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Release|Any CPU.ActiveCfg = Release|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Release|Any CPU.Build.0 = Release|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Release|x64.ActiveCfg = Release|x64
+		{A010B7E6-3DCB-468B-A963-3997FA6AB6C0}.Release|x64.Build.0 = Release|x64
+		{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}.Debug|Any CPU.Build.0 = Debug|x64
+		{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}.Debug|x64.ActiveCfg = Debug|x64
+		{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}.Debug|x64.Build.0 = Debug|x64
+		{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}.Release|Any CPU.ActiveCfg = Release|x64
+		{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}.Release|Any CPU.Build.0 = Release|x64
+		{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}.Release|x64.ActiveCfg = Release|x64
+		{A5DB4262-54A0-44AA-A48D-D0C7BE26D2C5}.Release|x64.Build.0 = Release|x64
+		{3938C7B3-85F1-4368-B622-428655625C36}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{3938C7B3-85F1-4368-B622-428655625C36}.Debug|Any CPU.Build.0 = Debug|x64
+		{3938C7B3-85F1-4368-B622-428655625C36}.Debug|x64.ActiveCfg = Debug|x64
+		{3938C7B3-85F1-4368-B622-428655625C36}.Debug|x64.Build.0 = Debug|x64
+		{3938C7B3-85F1-4368-B622-428655625C36}.Release|Any CPU.ActiveCfg = Release|x64
+		{3938C7B3-85F1-4368-B622-428655625C36}.Release|Any CPU.Build.0 = Release|x64
+		{3938C7B3-85F1-4368-B622-428655625C36}.Release|x64.ActiveCfg = Release|x64
+		{3938C7B3-85F1-4368-B622-428655625C36}.Release|x64.Build.0 = Release|x64
+		{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}.Debug|x64.Build.0 = Debug|Any CPU
+		{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}.Release|x64.ActiveCfg = Release|Any CPU
+		{44E84BF8-7AB3-4FA2-B2DE-187B9C2069A0}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

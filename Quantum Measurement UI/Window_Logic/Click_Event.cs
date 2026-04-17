@@ -37,6 +37,12 @@ namespace Quantum_measurement_UI
             {
                 AppendMessage("Experiment is already running.");
             }
+            // 2. SAFETY CHECK: Check if Alignment is currently running
+            if (isAlignmentRunning)
+            {
+                AppendMessage("Cannot start Experiment: Alignment is currently active. Please turn off Alignment first.");
+                return;
+            }
             else
             {
                 await StartExperimentAsync();
@@ -49,6 +55,54 @@ namespace Quantum_measurement_UI
         private async void TerminateButton_Click(object sender, RoutedEventArgs e)
         {
             await TerminateExperimentAsync();
+        }
+
+        private async void StartAlignmentButton_Click(object sender, RoutedEventArgs e)
+        {
+            // 1. Check if Alignment is already running
+            if (isAlignmentRunning)
+            {
+                AppendMessage("Alignment is already active.");
+                return;
+            }
+
+            // 2. SAFETY CHECK: Check if Experiment is currently running
+            if (isExperimentRunning)
+            {
+                AppendMessage("Cannot start Alignment: Experiment is currently active. Please turn off the Experiment first.");
+                return;
+            }
+
+            // 3. Start Alignment
+            try
+            {
+                isAlignmentRunning = true;
+
+                // Define this method similarly to StartExperimentAsync
+                await StartAlignmentAsync();
+
+                AppendMessage("Alignment started (40 MHz).");
+            }
+            catch (Exception ex)
+            {
+                isAlignmentRunning = false;
+                AppendMessage($"Error starting alignment: {ex.Message}");
+            }
+        }
+
+        private async void StopAlignmentButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!isAlignmentRunning)
+            {
+                AppendMessage("Alignment is not currently active.");
+                return;
+            }
+
+            // Define this method similarly to TerminateExperimentAsync
+            await StopAlignmentAsync();
+
+            isAlignmentRunning = false;
+            AppendMessage("Alignment stopped.");
         }
 
         /// <summary>
@@ -67,6 +121,87 @@ namespace Quantum_measurement_UI
         {
             isPaused = false;
             AppendMessage("Visualization resumed.");
+        }
+
+
+        /// <summary>
+        /// Retrieves a list of all checked tags from the UI.
+        /// </summary>
+        private List<string> GetSelectedTags()
+        {
+            List<string> selectedTags = new List<string>();
+
+            // Iterate through all items in the StackPanel defined in XAML
+            foreach (var child in MetadataCheckBoxList.Children)
+            {
+                if (child is CheckBox checkBox && checkBox.IsChecked == true)
+                {
+                    selectedTags.Add(checkBox.Content.ToString());
+                }
+            }
+
+            return selectedTags;
+        }
+        private async Task RunMatlabAnalysisAsync(string resultFolderPath)
+        {
+            await Task.Run(() =>
+            {
+                try
+                {
+                    string scriptDirectory = @"C:\Quantum Squeezing\prototype and postprocessing\post processing";
+                    string scriptPath = System.IO.Path.Combine(scriptDirectory, "cm_pipeline_all_in_one.py");
+
+                    if (!System.IO.File.Exists(scriptPath))
+                    {
+                        throw new FileNotFoundException($"Python post-processing script not found: {scriptPath}");
+                    }
+
+                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    {
+                        FileName = "python",
+                        Arguments = $"\"{scriptPath}\" \"{resultFolderPath}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WorkingDirectory = scriptDirectory
+                    };
+
+                    AppendMessage("Launching Python post-processing...");
+                    using (Process python = Process.Start(startInfo))
+                    {
+                        // Fire-and-forget to match the old MATLAB behavior.
+                    }
+
+                    AppendMessage("Python post-processing command sent.");
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => AppendMessage($"Failed to launch Python post-processing: {ex.Message}"));
+                }
+            });
+        }
+
+        private void AnalyzeRunButton_Click()
+        {
+            // 1. Get the path
+            // Assuming 'resultsBaseDirectory' and 'experimentLogDirectory' are your global variables
+            string fullPath = System.IO.Path.Combine(resultsBaseDirectory, experimentLogDirectory);
+
+            // 2. Run Analysis
+            var analyzer = new QuantumAnalysisService();
+
+            // Run in background so UI doesn't freeze
+            Task.Run(() =>
+            {
+                var result = analyzer.RunPipeline(fullPath);
+
+                Dispatcher.Invoke(() =>
+                {
+                    if (result.Success)
+                        AppendMessage("Analysis Generated: check folder for PNGs.");
+                    else
+                        AppendMessage(result.Message);
+                });
+            });
         }
 
         /// <summary>
@@ -723,6 +858,83 @@ namespace Quantum_measurement_UI
                 // Re-enable the button
                 ResetDelayStageButton.IsEnabled = true;
             }
+        }
+
+        /// <summary>
+        /// Resets the Matrix Balance Chart data, cumulative sums, frame counters, and UI text.
+        /// </summary>
+        private void ResetMatrixBalanceChart_Click(object sender, RoutedEventArgs e)
+        {
+            // Run on UI thread to safely update collections and UI
+            Dispatcher.Invoke(() =>
+            {
+                // 1. Reset the raw bar chart values
+                if (MatrixChartValues != null)
+                {
+                    MatrixChartValues.Clear();
+                    for (int i = 0; i < 49; i++)
+                    {
+                        MatrixChartValues.Add(0.0);
+                    }
+                }
+
+                // 2. Reset the Table Data and the History for the Plot
+                if (MatrixTableData != null)
+                {
+                    foreach (var item in MatrixTableData)
+                    {
+                        item.Value = 0;
+                        item.PhysicalValue = 0;
+                        item.History.Clear(); // This clears the 100-point plot
+                        item.HistoryBinCounts.Clear();
+                        item.CurrentPositionCumulativeHistory.Clear();
+                        item.CurrentPositionTrackedBin = double.NaN;
+                        item.CurrentPositionAcceptedCount = 0;
+                        item.CurrentPositionRunningAverage = 0.0;
+                    }
+                }
+
+                // 3. Clear the active trend plots
+                SelectedTrendPlotModel?.Series.Clear();
+                SelectedTrendPlotModel?.InvalidatePlot(true);
+                SelectedPositionAveragePlotModel?.Series.Clear();
+                SelectedPositionAveragePlotModel?.InvalidatePlot(true);
+
+                // 4. Reset internal cumulative sums and counters
+                if (Cumulative49Channels != null)
+                {
+                    Array.Clear(Cumulative49Channels, 0, Cumulative49Channels.Length);
+                }
+
+                TotalFramesReceived = 0;
+                TotalFramesSkipped = 0;
+                ResetBackendFrameRateMetrics();
+
+                // 5. Reset UI text
+                SkippedFramesText.Text = "Processed: 0 | Backend FPS: 0.00 | Display FPS: 0.00";
+                SelectedAccumulationText.Text = "Selected accumulation: none";
+                SelectedPositionAverageText.Text = "Single-position cumulative average: none";
+
+                AppendMessage("Matrix Balance and History Plot reset.");
+            });
+        }
+        /// <summary>
+        /// Resets the Integrated Column chart and the >9000 rejection counters.
+        /// </summary>
+        private void ResetIntegralChart_Click(object sender, RoutedEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                lastProcessedFrameCount = 0; // Reset the sync tracker
+                TotalIntegralFrames = 0;
+
+                IntegratedDataHistory?.Clear();
+                _integratedPlotSeries?.Points.Clear();
+                IntegratedPlotModel?.InvalidatePlot(true);
+                IntegralRejectionStatsText.Text = "System Skip Rate: 0 / 0 (0.00%)";
+
+                AppendMessage("Integral Chart synchronized and reset.");
+            });
         }
 
         #endregion

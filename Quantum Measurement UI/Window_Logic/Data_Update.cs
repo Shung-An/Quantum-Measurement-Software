@@ -9,6 +9,8 @@ using QuantumSqueezingUI;
 using Quantum_measurement_UI;
 using System.Threading;
 using Microsoft.UI.Xaml.Input;
+using System.Windows.Media;
+using OxyPlot;
 
 namespace Quantum_measurement_UI
 {
@@ -19,10 +21,15 @@ namespace Quantum_measurement_UI
         /// <summary>
         /// Initializes the named pipe client for data communication.
         /// </summary>
-        private void InitializePipeClient()
+        private async Task AsyncInitializePipeClient()
         {
             pipeClient = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
-            pipeClient.Connect();
+
+            // CHANGE: Connect() -> await ConnectAsync()
+            // This allows the UI to stay responsive while waiting
+            AppendMessage("Waiting for GageStreamThruGPU to initialize...");
+            await pipeClient.ConnectAsync(10000); // 10 second timeout
+
             AppendMessage("Data Pipe Connected to server.");
         }
 
@@ -105,10 +112,12 @@ namespace Quantum_measurement_UI
 
                     if (success)
                     {
-                        // Update the charts with new data
-                        Dispatcher.Invoke(() => UpdateChart());         // update the SignalChart in the UI thread
-                        Dispatcher.Invoke(() => UpdateHeatmap());       // update the Heatmap in the UI thread
-                        Dispatcher.Invoke(() => UpdatePixelChart());    // update the PixelChart in the UI thread
+                        _ = Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            UpdateChart();
+                            UpdateHeatmap();
+                            Update49ChannelBarChart();
+                        }));
                     }
 
                     await Task.Delay((int)UpdateInterval, cancellationToken);
@@ -154,8 +163,8 @@ namespace Quantum_measurement_UI
                 const double repRate = 7.6e7;                // 80 MHz
                 const double gain = 24500;                 // V/A
                 const double responseTime = 3.5e-9;        // 3.5 ns
-                const double responsivity = 0.1;           // A/W
-                const double VtoW = 0.001;                 // 1 mV = 1 µW
+                const double responsivity = 0.53;           // A/W
+                const double VtoW = 0.0001;                 // 10 mV = 1 µW
 
                 double photonEnergy_J = photonEnergy_eV * eCharge;
 
@@ -191,7 +200,11 @@ namespace Quantum_measurement_UI
                 double conversion1 = 2 * N1 * sensitivity;
                 double conversion2 = 2 * N2 * sensitivity;
                 double conversionFactor_V2_per_rad2 = conversion1 * conversion2;
-
+                if (this.conversionFactor_V2_per_rad2 == 1)
+                {
+                    this.conversionFactor_V2_per_rad2 = conversion1 * conversion2;
+                    AppendMessage($"Conversion factor LOCKED at: {this.conversionFactor_V2_per_rad2:E2} V²/rad²");
+                }
                 // === Step 8: Convert to rad²/√Hz ===
                 double noise_rad2_sqrtHz = shotNoiseSignal_V2_sqrtHz / conversionFactor_V2_per_rad2;
                 double noise_μrad2_sqrtHz = noise_rad2_sqrtHz * 1e12;
@@ -231,44 +244,72 @@ namespace Quantum_measurement_UI
         }
 
 
+
+
         /// <summary>
         /// Requests data from the server and receives it.
         /// </summary>
+        private static async Task<bool> ReadExactAsync(Stream s, byte[] buf, int total)
+        {
+            int off = 0;
+            while (off < total)
+            {
+                int n = await s.ReadAsync(buf, off, total - off).ConfigureAwait(false);
+                if (n == 0) return false; // peer closed
+                off += n;
+            }
+            return true;
+        }
+
         private async Task<bool> RequestAndReceiveDataAsync()
         {
             try
             {
-                // Send a request to the server
+                // 1) Request: short 2 (unchanged)
                 byte[] request = BitConverter.GetBytes((short)2);
+                await pipeClient.WriteAsync(request, 0, request.Length).ConfigureAwait(false);
+                await pipeClient.FlushAsync().ConfigureAwait(false);
 
-                await pipeClient.WriteAsync(request, 0, request.Length);
+                // 2) Sizes
+                int interleavedBytes = 2 * DataPoints * sizeof(short); // A+B interleaved
+                int matrixBytes = 64 * sizeof(double);            // 512
 
-                // Receive data from the server
-                byte[] dataBufferBytes = new byte[DataPoints * sizeof(short)];
-                byte[] corrBufferBytes = new byte[64 * sizeof(double)];
+                // 3) Buffers
+                byte[] interleaved = new byte[interleavedBytes];
+                byte[] mBytes = new byte[matrixBytes];
 
-                int bytesRead = await pipeClient.ReadAsync(dataBufferBytes, 0, dataBufferBytes.Length);
-                int corrBytesRead = await pipeClient.ReadAsync(corrBufferBytes, 0, corrBufferBytes.Length);
-
-                if (bytesRead == dataBufferBytes.Length && corrBytesRead == corrBufferBytes.Length)
+                // 4) Read interleaved
+                if (!await ReadExactAsync(pipeClient, interleaved, interleavedBytes).ConfigureAwait(false))
                 {
-                    Buffer.BlockCopy(dataBufferBytes, 0, dataBuffer, 0, dataBufferBytes.Length);
-                    Buffer.BlockCopy(corrBufferBytes, 0, corrMatrixBuffer, 0, corrBufferBytes.Length);
+                    AppendMessage("Error: Incomplete data received (interleaved).");
+                    return false;
+                }
 
-                    return true; // Data received successfully
-                }
-                else
+                // 5) Read matrix
+                if (!await ReadExactAsync(pipeClient, mBytes, matrixBytes).ConfigureAwait(false))
                 {
-                    AppendMessage("Error: Incomplete data received.");
-                    return false; // Data reception failed
+                    AppendMessage("Error: Incomplete data received (matrix).");
+                    return false;
                 }
+
+                // Ensure app buffers
+                if (dataBuffer == null || dataBuffer.Length < 2 * DataPoints)
+                    dataBuffer = new short[2 * DataPoints];
+                if (corrMatrixBuffer == null || corrMatrixBuffer.Length < 64)
+                    corrMatrixBuffer = new double[64];
+
+                // 6) Copy: interleaved bytes → short[] dataBuffer
+                Buffer.BlockCopy(interleaved, 0, dataBuffer, 0, interleavedBytes);
+
+                // 7) Copy matrix bytes → double[] corrMatrixBuffer
+                Buffer.BlockCopy(mBytes, 0, corrMatrixBuffer, 0, matrixBytes);
+                ProcessReceivedCorrelationMatrixFrame();
+
+                return true;
             }
             catch (Exception ex)
             {
                 AppendMessage($"Communication error: {ex.Message}");
-
-
-
                 if (!pipeClient.IsConnected)
                 {
                     pipeClient.Dispose();
@@ -276,7 +317,7 @@ namespace Quantum_measurement_UI
                     isPaused = true;
                 }
                 isPaused = true;
-                return false; // Communication failed
+                return false;
             }
         }
 
@@ -300,9 +341,10 @@ namespace Quantum_measurement_UI
             {
                 try
                 {
-                    if (daqPipe != null && daqPipe.IsConnected)
+                    var localPipe = daqPipe;
+                    if (localPipe != null && localPipe.IsConnected)
                     {
-                        string response = await daqPipe.SendCommandAsync("ReadAI");
+                        string response = await localPipe.SendCommandAsync("ReadAI");
                              
                         string[] tokens = response.Split(',');
                         for (int i = 0; i < tokens.Length && i < daqBuffer.Length; i++)
@@ -327,12 +369,89 @@ namespace Quantum_measurement_UI
                         }
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (ObjectDisposedException)
+                {
+                    break;
+                }
+                catch (InvalidOperationException ex) when (ex.Message.Contains("Pipe is not connected."))
+                {
+                    Console.WriteLine("Auto read stopped: pipe disconnected.");
+                    break;
+                }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Auto read error: {ex.Message}");
                 }
 
-                await Task.Delay(100); // Delay for 100 milliseconds 
+                await Task.Delay(100, token); // Delay for 100 milliseconds 
+            }
+        }
+
+        private void ProcessReceivedCorrelationMatrixFrame()
+        {
+            double[] rawSnapshot = new double[64];
+            Array.Copy(corrMatrixBuffer, rawSnapshot, rawSnapshot.Length);
+            UpdateBackendFrameRateMetrics();
+
+            lock (_acceptedLock)
+            {
+                TotalFramesReceived++;
+                _lastMatrixFrameReceivedUtc = DateTime.UtcNow;
+                Array.Copy(rawSnapshot, _latestRawMatrixFrame, rawSnapshot.Length);
+
+                // Use every received frame for the live matrix/heatmap path.
+                Array.Copy(rawSnapshot, _latestAcceptedHeatmapFrame, rawSnapshot.Length);
+
+                TryAnalyzeCorrelationMatrix(rawSnapshot, out double[] current64, out double[] reduced49, out double frameRms, out double channel0Amplitude);
+
+                long validFrames = TotalFramesReceived;
+                _lastAccepted64Scaled = current64;
+                _lastAcceptedValidFrameIndex = validFrames;
+                _lastAcceptedFrameRms = frameRms;
+                _lastAcceptedChannel0Amplitude = channel0Amplitude;
+                _acceptedFrameRateFps = _backendFrameRateFps;
+                Array.Copy(reduced49, _latestReduced49Frame, reduced49.Length);
+                Array.Copy(reduced49, current49ChannelValues, reduced49.Length);
+                UpdateSelectedPositionCumulativeHistories(reduced49);
+
+                for (int i = 0; i < reduced49.Length; i++)
+                {
+                    Cumulative49Channels[i] += reduced49[i];
+                }
+            }
+        }
+
+        private void UpdateBackendFrameRateMetrics()
+        {
+            lock (_acceptedLock)
+            {
+                long nowTicks = Stopwatch.GetTimestamp();
+                if (_lastBackendFrameTimestampTicks != 0)
+                {
+                    double deltaSeconds = (double)(nowTicks - _lastBackendFrameTimestampTicks) / Stopwatch.Frequency;
+                    if (deltaSeconds > 0)
+                    {
+                        double instantaneousFps = 1.0 / deltaSeconds;
+                        _backendFrameRateFps = _backendFrameRateFps <= 0
+                            ? instantaneousFps
+                            : 0.2 * instantaneousFps + 0.8 * _backendFrameRateFps;
+                    }
+                }
+                _lastBackendFrameTimestampTicks = nowTicks;
+            }
+        }
+
+        private void ResetBackendFrameRateMetrics()
+        {
+            lock (_acceptedLock)
+            {
+                _lastBackendFrameTimestampTicks = 0;
+                _backendFrameRateFps = 0.0;
+                _acceptedFrameRateFps = 0.0;
             }
         }
 
@@ -382,7 +501,12 @@ namespace Quantum_measurement_UI
         {
             int dataPointCount = DataPoints / 2;
 
-            // If the collections are empty, initialize them
+            if (_signalSeriesA == null || _signalSeriesB == null || SignalPlotModel == null)
+            {
+                return;
+            }
+
+            // Keep the LiveCharts buffers populated for the autobalance tab, but render the main signal plot with OxyPlot.
             if (ChannelAValues.Count == 0 || ChannelBValues.Count == 0)
             {
                 for (int i = 0; i < dataPointCount; i++)
@@ -392,11 +516,19 @@ namespace Quantum_measurement_UI
                 }
             }
 
+            _signalSeriesA.Points.Clear();
+            _signalSeriesB.Points.Clear();
             for (int i = 0; i < dataPointCount; i++)
             {
-                ChannelAValues[i] = dataBuffer[i * 2] / 32768.0 * 240;                  // Transform the signal value to voltage for channel A
-                ChannelBValues[i] = dataBuffer[i * 2 + 1] / 32768.0 * 240;              // Transform the signal value to voltage for channel B
+                double channelA = dataBuffer[i * 2] / 32768.0 * 240;
+                double channelB = dataBuffer[i * 2 + 1] / 32768.0 * 240;
+                ChannelAValues[i] = channelA;
+                ChannelBValues[i] = channelB;
+                _signalSeriesA.Points.Add(new DataPoint(i, channelA));
+                _signalSeriesB.Points.Add(new DataPoint(i, channelB));
             }
+
+            SignalPlotModel.InvalidatePlot(true);
         }
 
         /// <summary>
@@ -405,116 +537,371 @@ namespace Quantum_measurement_UI
         private void UpdateHeatmap()
         {
             int matrixSize = 8; // Assuming 8x8 correlation matrix
-
-            if (heatValues.Count == 0)
+            if (_heatmapSeries == null || HeatmapPlotModel == null)
             {
-                for (int y = 0; y < matrixSize; y++) // y is the row index
+                return;
+            }
+
+            double[] heatmapFrame = new double[64];
+
+            lock (_acceptedLock)
+            {
+                Array.Copy(_latestAcceptedHeatmapFrame, heatmapFrame, heatmapFrame.Length);
+            }
+
+            double[,] heatmapData = new double[matrixSize, matrixSize];
+            for (int y = 0; y < matrixSize; y++)
+            {
+                for (int x = 0; x < matrixSize; x++)
                 {
-                    for (int x = 0; x < matrixSize; x++) // x is the column index
-                    {
-                        // Initially set to zero or any default value
-                        heatValues.Add(new HeatPoint(x, y, 0.0));
-                    }
+                    int index = y * matrixSize + x;
+                    heatmapData[x, y] = Math.Round(heatmapFrame[index], 2);
                 }
             }
 
-            // Update the value of each HeatPoint
-            for (int y = 0; y < matrixSize; y++)    // iterate over rows
+            _heatmapSeries.Data = heatmapData;
+            lock (_acceptedLock)
             {
-                for (int x = 0; x < matrixSize; x++)  // iterate over columns
-                {
-                    int index = y * matrixSize + x; // Index in row-major order
-
-                    // Update the HeatPoint with the new value
-                    heatValues[index].Weight = Math.Round(corrMatrixBuffer[index], 2);
-                }
+                HeatmapPlotModel.Title = $"Cross Correlation | Backend FPS: {_backendFrameRateFps:F2} | Display FPS: {_acceptedFrameRateFps:F2}";
             }
+            HeatmapPlotModel.InvalidatePlot(true);
         }
 
-
-        /*        /// <summary>
-                /// Updates the pixel chart with the selected pixel value over time.
-                /// </summary>
-                private void UpdatePixelChart()
-                {
-                    int index = selectedRow * 8 + selectedColumn;       // Row major order
-                    double selectedValue = corrMatrixBuffer[index];
-
-                    // Update the SelectedPixelValue TextBox
-                    SelectedPixelValue.Text = selectedValue.ToString("F2");
-
-                    // Add the new value to the PixelValues series
-                    PixelValues.Add(selectedValue);
-
-                    // Keep the series length manageable
-                    if (PixelValues.Count > 100) // Keep last 100 points
-                    {
-                        PixelValues.RemoveAt(0);
-                    }
-                }*/
 
 
         /// <summary>
-        /// Updates the pixel chart. In diagonal mode, picks (i,i) (i != 7),
-        /// subtracts (7,7) and plots the cumulative sum over time.
-        /// Otherwise, uses the selected (row,col) and still subtracts (7,7),
-        /// plotting the cumulative sum.
+        /// Reduces 64 raw DAQ channels into 49 differential signals based on the 8x8 matrix topology.
         /// </summary>
-        private void SetDiagonalMode(bool enabled, int diagonalIndex = 6)
+        private double[] ReduceTo49Channels(double[] raw64Channels)
         {
-            UseDiagonalMode = enabled;
-            SelectedDiagonalIndex = diagonalIndex == 7 ? 6 : Math.Max(0, Math.Min(7, diagonalIndex));
+            if (raw64Channels == null || raw64Channels.Length < 64)
+                return new double[49];
 
-            PixelCumulativeSum = 0;
-            PixelCount = 0;
+            double[] reduced49 = new double[49];
 
-            if (PixelValues != null)
-                PixelValues.Clear();
+            for (int i = 0; i < 49; i++)
+            {
+                // Convert 1-based matrix coordinates to 0-based array index logic
+                int r1 = ReductionPairs[i, 0] - 1;
+                int c1 = ReductionPairs[i, 1] - 1;
+                int r2 = ReductionPairs[i, 2] - 1;
+                int c2 = ReductionPairs[i, 3] - 1;
+
+                // index = (row * width) + col
+                int index1 = (r1 * 8) + c1;
+                int index2 = (r2 * 8) + c2;
+
+                reduced49[i] = raw64Channels[index1] - raw64Channels[index2];
+            }
+
+            return reduced49;
+        }
+
+        /// <summary>
+        /// Retrieves the latest 64 channels from the correlation matrix, scaled properly.
+        /// Rejects frames when channel 0 exceeds the indicator threshold.
+        /// </summary>
+        private void TryAnalyzeCorrelationMatrix(
+            double[] sourceMatrix,
+            out double[] current64,
+            out double[] reduced49,
+            out double frame_rms,
+            out double channel0Amplitude)
+        {
+            current64 = Array.Empty<double>();
+            reduced49 = Array.Empty<double>();
+            frame_rms = 0.0;
+            channel0Amplitude = 0.0;
+
+            const double ScaleFactor = 0.0576 / 1073741824.0 * 100;
+
+            // 1. Calculate Mean and Variance for the threshold check
+            double sum = 0;
+            for (int i = 0; i < sourceMatrix.Length; i++)
+            {
+                sum += sourceMatrix[i] * ScaleFactor;
+            }
+            double mean = sum / 64.0;
+
+            double sqSum = 0;
+            for (int i = 0; i < sourceMatrix.Length; i++)
+            {
+                sqSum += Math.Pow(sourceMatrix[i] * ScaleFactor - mean, 2);
+            }
+            double variance = sqSum / 64.0;
+
+            // 2. RMS (standard deviation) remains diagnostic-only.
+            frame_rms = Math.Sqrt(variance);
+
+            // 3. Channel 0 remains diagnostic-only.
+            channel0Amplitude = sourceMatrix[0] * ScaleFactor;
+
+            // 4. Fetch & scale the 64 channels for the live processing path.
+            current64 = new double[64];
+            for (int i = 0; i < 64; i++)
+            {
+                current64[i] = sourceMatrix[i] * ScaleFactor;
+            }
+
+            reduced49 = ReduceTo49Channels(current64);
+        }
+        /// <summary>
+        /// Updates the 49-Channel Bar Chart UI with Cumulative Sums and tracks skipped frames.
+        /// </summary>
+        private void Update49ChannelBarChart()
+        {
+            long totalFramesReceived;
+            long totalFramesSkipped;
+            double[] cumulativeSnapshot = new double[49];
+
+            lock (_acceptedLock)
+            {
+                totalFramesReceived = TotalFramesReceived;
+                totalFramesSkipped = TotalFramesSkipped;
+                Array.Copy(Cumulative49Channels, cumulativeSnapshot, cumulativeSnapshot.Length);
+            }
+
+            long validFrames = totalFramesReceived;
+            if (validFrames <= 0)
+            {
+                UpdateSkipStatsUI(totalFramesReceived, totalFramesSkipped);
+                return;
+            }
+
+            for (int i = 0; i < 49; i++)
+            {
+                double avgV2 = cumulativeSnapshot[i] / validFrames;
+                double physValue = (avgV2 / conversionFactor_V2_per_rad2) * 1e12;
+
+                MatrixTableData[i].Value = avgV2;
+                MatrixTableData[i].PhysicalValue = physValue;
+            }
+
+            UpdateSelectedAccumulationSummary();
+            UpdateSelectedPositionAveragePlot();
+            UpdateSkipStatsUI(totalFramesReceived, totalFramesSkipped);
         }
 
 
-        private void UpdatePixelChart()
+        /// <summary>
+        /// Helper to calculate and display the skipped frame percentage.
+        /// </summary>
+        private void UpdateSkipStatsUI(long totalFramesReceived, long totalFramesSkipped)
         {
-            if (corrMatrixBuffer == null || corrMatrixBuffer.Length < 64) return;
+            if (totalFramesReceived == 0) return;
 
-            const int size = 8;
-            int anchorIdx = 7 * size + 7;
-            double anchor = corrMatrixBuffer[anchorIdx];
+            double percentSkipped = (double)totalFramesSkipped / totalFramesReceived * 100.0;
+            double backendFps;
+            double acceptedFps;
 
-            int r, c;
-            if (UseDiagonalMode)
+            lock (_acceptedLock)
             {
-                int d = SelectedDiagonalIndex;
-                if (d < 0) d = 0;
-                if (d > 7) d = 7;
-                if (d == 7) d = 6;
-                r = d; c = d;
-            }
-            else
-            {
-                r = Math.Max(0, Math.Min(size - 1, selectedRow));
-                c = Math.Max(0, Math.Min(size - 1, selectedColumn));
-                if (r == 7 && c == 7) { r = 6; c = 6; }
+                backendFps = _backendFrameRateFps;
+                acceptedFps = _acceptedFrameRateFps;
             }
 
-            int idx = r * size + c;
-            double diff = (corrMatrixBuffer[idx] - anchor)*0.24*0.24/32768/32768;
-
-            // Increment count and sum
-            PixelCount++;
-            PixelCumulativeSum += diff;
-
-            // Show both current diff and count
-            SelectedPixelValue.Text = $"{diff:F2}  (Δ=({r},{c})-(7,7)) | Count: {PixelCount}";
-
-            // Push cumulative sum to chart
-            PixelValues.Add(PixelCumulativeSum);
-
-            // Keep chart display to last 100 points, but DO NOT reset sum or count
-            if (PixelValues.Count > 100)
-                PixelValues.RemoveAt(0);
+            SkippedFramesText.Text =
+                $"Processed: {totalFramesReceived}  •  " +
+                $"Backend FPS: {backendFps:F2}  •  Display FPS: {acceptedFps:F2}";
         }
 
+        private void UpdateSelectedAccumulationSummary()
+        {
+            if (MatrixBalanceTable == null || SelectedAccumulationText == null || SelectedPositionAverageText == null)
+            {
+                return;
+            }
+
+            MatrixBalanceItem? selectedItem = MatrixBalanceTable.SelectedItems
+                .Cast<MatrixBalanceItem>()
+                .FirstOrDefault();
+
+            if (selectedItem == null)
+            {
+                SelectedAccumulationText.Text = "Selected accumulation: none";
+                SelectedPositionAverageText.Text = "Single-position cumulative average: none";
+                return;
+            }
+
+            double position = System.Threading.Volatile.Read(ref currentESPPosition);
+            string positionText = double.IsNaN(position)
+                ? "position unavailable"
+                : $"ESP {position:F4} mm";
+
+            SelectedAccumulationText.Text =
+                $"Selected accumulation: Pair {selectedItem.Channel} = {selectedItem.PhysicalValue:F2} μrad² ({positionText})";
+        }
+
+        private void UpdateSelectedPositionCumulativeHistories(double[] reduced49)
+        {
+            double position = System.Threading.Volatile.Read(ref currentESPPosition);
+            if (double.IsNaN(position) || conversionFactor_V2_per_rad2 == 0)
+            {
+                return;
+            }
+
+            double binnedPosition = Math.Round(position / PositionHistoryBinSizeMm) * PositionHistoryBinSizeMm;
+            int channelCount = Math.Min(reduced49.Length, MatrixTableData.Count);
+            for (int i = 0; i < channelCount; i++)
+            {
+                MatrixBalanceItem item = MatrixTableData[i];
+                if (double.IsNaN(item.CurrentPositionTrackedBin) || Math.Abs(item.CurrentPositionTrackedBin - binnedPosition) > 1e-9)
+                {
+                    item.CurrentPositionTrackedBin = binnedPosition;
+                    item.CurrentPositionAcceptedCount = 0;
+                    item.CurrentPositionRunningAverage = 0.0;
+                    item.CurrentPositionCumulativeHistory.Clear();
+                }
+
+                double physicalSample = (reduced49[i] / conversionFactor_V2_per_rad2) * 1e12;
+                item.CurrentPositionAcceptedCount++;
+                item.CurrentPositionRunningAverage +=
+                    (physicalSample - item.CurrentPositionRunningAverage) / item.CurrentPositionAcceptedCount;
+
+                item.CurrentPositionCumulativeHistory.Add(
+                    new ObservablePoint(item.CurrentPositionAcceptedCount, item.CurrentPositionRunningAverage));
+
+                if (item.CurrentPositionCumulativeHistory.Count > 500)
+                {
+                    item.CurrentPositionCumulativeHistory.RemoveAt(0);
+                }
+            }
+        }
+
+        private void UpdateSelectedPositionAveragePlot()
+        {
+            if (MatrixBalanceTable == null || SelectedPositionAverageText == null || SelectedPositionAveragePlotModel == null)
+            {
+                return;
+            }
+
+            SelectedPositionAveragePlotModel.Series.Clear();
+            var selectedItems = MatrixBalanceTable.SelectedItems.Cast<MatrixBalanceItem>().ToList();
+            if (selectedItems.Count == 0)
+            {
+                SelectedPositionAverageText.Text = "Single-position cumulative average: none";
+                SelectedPositionAveragePlotModel.InvalidatePlot(true);
+                return;
+            }
+
+            foreach (var item in selectedItems)
+            {
+                var series = new OxyPlot.Series.LineSeries
+                {
+                    Title = $"Ch {item.Channel}",
+                    StrokeThickness = 2
+                };
+
+                foreach (var point in item.CurrentPositionCumulativeHistory)
+                {
+                    series.Points.Add(new OxyPlot.DataPoint(point.X, point.Y));
+                }
+
+                SelectedPositionAveragePlotModel.Series.Add(series);
+            }
+
+            MatrixBalanceItem leadItem = selectedItems[0];
+            if (double.IsNaN(leadItem.CurrentPositionTrackedBin) || leadItem.CurrentPositionAcceptedCount == 0)
+            {
+                SelectedPositionAverageText.Text = $"Single-position cumulative average: Pair {leadItem.Channel} waiting for accepted frames";
+                return;
+            }
+
+            SelectedPositionAverageText.Text =
+                $"Single-position cumulative average: Pair {leadItem.Channel} at ESP {leadItem.CurrentPositionTrackedBin:F4} mm over {leadItem.CurrentPositionAcceptedCount} accepted frames";
+            SelectedPositionAveragePlotModel.InvalidatePlot(true);
+        }
+
+        private void UpdateSelectedTrendPlot()
+        {
+            if (MatrixBalanceTable == null || SelectedTrendPlotModel == null)
+            {
+                return;
+            }
+
+            SelectedTrendPlotModel.Series.Clear();
+            foreach (var item in MatrixBalanceTable.SelectedItems.Cast<MatrixBalanceItem>())
+            {
+                var series = new OxyPlot.Series.LineSeries
+                {
+                    Title = $"Ch {item.Channel}",
+                    StrokeThickness = 2
+                };
+
+                foreach (var point in item.History)
+                {
+                    series.Points.Add(new OxyPlot.DataPoint(point.X, point.Y));
+                }
+
+                SelectedTrendPlotModel.Series.Add(series);
+            }
+
+            SelectedTrendPlotModel.InvalidatePlot(true);
+        }
+
+
+
+        private void UpdateAllChannelsMSE()
+        {
+            double[] latest64Channels = corrMatrixBuffer;  // assume this is your latest 64-channel data
+
+            // 1. Add newest sample to each rolling buffer
+            for (int ch = 0; ch < 64; ch++)
+            {
+                var buf = channelRmsBuffers[ch];
+                if (buf == null)
+                {
+                    channelRmsBuffers[ch] = new List<double>(RmsWindowSize + 10);
+                    buf = channelRmsBuffers[ch];
+                }
+
+                buf.Add(latest64Channels[ch]);
+
+                // Keep fixed window size
+                if (buf.Count > RmsWindowSize)
+                    buf.RemoveAt(0);
+            }
+
+            if (_rmsSeries == null || RmsPlotModel == null)
+            {
+                return;
+            }
+
+            // 2. Compute MSE for each channel (against its own running mean)
+            for (int ch = 0; ch < 64; ch++)
+            {
+                var buf = channelRmsBuffers[ch];
+                double mse = 0.0;
+                if (buf != null && buf.Count >= 10)
+                {
+                    double mean = buf.Average();
+                    double sumSquaredDiff = buf.Sum(x => (x - mean) * (x - mean));
+                    mse = sumSquaredDiff / buf.Count;
+                }
+
+                RmsValues[ch] = mse;
+                _rmsSeries.Points[ch] = new DataPoint(ch, mse);
+            }
+
+            RmsPlotModel.InvalidatePlot(false);
+        }
+
+        private void HistoryTimer_Tick(object sender, EventArgs e)
+        {
+            double position = System.Threading.Volatile.Read(ref currentESPPosition);
+            if (double.IsNaN(position))
+            {
+                return;
+            }
+
+            // Capture the current physical values for all 49 channels into their history
+            foreach (var item in MatrixTableData)
+            {
+                UpdateHistoryAtPosition(item, position, item.PhysicalValue);
+            }
+
+            UpdateSelectedTrendPlot();
+        }
 
 
         #endregion

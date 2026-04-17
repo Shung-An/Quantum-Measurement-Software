@@ -1,0 +1,84 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build-ui",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/Quantum Measurement UI/Quantum Measurement UI.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary;ForceNoAlign"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-service",
+            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe",
+            "type": "process",
+            "args": [
+                "${workspaceFolder}\\QuantumDAQService\\QuantumDAQService.csproj",
+                "/t:Build",
+                "/p:Configuration=Debug",
+                "/p:Platform=AnyCPU"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-native",
+            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe",
+            "type": "process",
+            "args": [
+                "${workspaceFolder}\\GageStreamThruGPU\\GageStreamThruGPU-Simple.vcxproj",
+                "/t:Build",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-all-msbuild",
+            "command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe",
+            "type": "process",
+            "args": [
+                "${workspaceFolder}\\Quantum Measurement.sln",
+                "/t:Build",
+                "/p:Configuration=Debug",
+                "/p:Platform=x64"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "publish-ui",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "publish",
+                "${workspaceFolder}/Quantum Measurement UI/Quantum Measurement UI.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary;ForceNoAlign"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "watch-ui",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "watch",
+                "run",
+                "--project",
+                "${workspaceFolder}/Quantum Measurement UI/Quantum Measurement UI.csproj"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build",
+            "dependsOn": [
+                "build-ui"
+            ],
+            "dependsOrder": "sequence"
+        }
+    ]
+}
