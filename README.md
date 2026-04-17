@@ -99,6 +99,8 @@ The **Quantum Measurement UI** project uses WPF (Windows Presentation Foundation
 
 **`MainWindow.xaml.cs`** and **`Window_Logic`**: The **code-behind file** for `MainWindow.xaml`. This C# file implements the logic and functionality for the UI elements defined in `MainWindow.xaml`. Additional window logic is organized in the `Window_Logic` folder. In summary, `MainWindow.xaml` defines the layout and structure, while `MainWindow.xaml.cs` and the files in `Window_Logic` manage the application's interactive behavior and core logic.
 
+For a project-level summary focused specifically on the WPF frontend, see [Quantum Measurement UI/README.md](./Quantum%20Measurement%20UI/README.md).
+
 #### Recent UI and Analysis Updates
 
 - The live WPF matrix-processing path now uses all received frames by default. The previous even-frame-only accumulation path has been removed from the main heatmap and matrix-balance views.
