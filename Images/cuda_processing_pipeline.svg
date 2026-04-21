@@ -1,0 +1,237 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">CUDA Processing Pipeline</title>
+  <desc id="desc">Flowchart of the QuantaMeasure and GageStreamThruGPU CUDA processing pipeline from digitizer to UI.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#111"/>
+    </marker>
+    <style>
+      .title { font: 700 46px Arial, Helvetica, sans-serif; fill: #111; }
+      .subtitle { font: italic 22px Arial, Helvetica, sans-serif; fill: #555; }
+      .h1 { font: 700 24px Arial, Helvetica, sans-serif; }
+      .h2 { font: 700 18px Arial, Helvetica, sans-serif; }
+      .body { font: 16px Arial, Helvetica, sans-serif; fill: #222; }
+      .small { font: 14px Arial, Helvetica, sans-serif; fill: #333; }
+      .blue { fill: #1f4ea8; }
+      .green { fill: #1d6b2a; }
+      .purple { fill: #6a2fb8; }
+      .gold { fill: #946200; }
+      .panel { fill: #fff; stroke-width: 3; }
+      .soft-blue { fill: #eef4ff; }
+      .soft-green { fill: #eef9ef; }
+      .soft-purple { fill: #f6f0ff; }
+      .soft-gold { fill: #fff9e8; }
+      .arrow { stroke: #111; stroke-width: 5; fill: none; marker-end: url(#arrow); }
+      .dashed { stroke-dasharray: 9 7; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="#ffffff"/>
+  <text x="800" y="70" text-anchor="middle" class="title">CUDA Processing Pipeline</text>
+  <text x="800" y="108" text-anchor="middle" class="subtitle">QuantaMeasure / GageStreamThruGPU</text>
+
+  <!-- Gage Digitizer -->
+  <rect x="20" y="220" rx="16" ry="16" width="200" height="420" class="panel soft-blue" stroke="#1f4ea8"/>
+  <text x="120" y="292" text-anchor="middle" class="h1 blue">Gage Digitizer</text>
+  <rect x="48" y="374" rx="10" ry="10" width="144" height="95" fill="#6d8fbd" stroke="#3e5d8e" stroke-width="3"/>
+  <rect x="56" y="385" rx="6" ry="6" width="128" height="69" fill="#d9d9d9" stroke="#555" stroke-width="2"/>
+  <circle cx="89" cy="433" r="16" fill="#ececec" stroke="#222" stroke-width="2"/>
+  <circle cx="89" cy="433" r="7" fill="#111"/>
+  <circle cx="144" cy="433" r="16" fill="#ececec" stroke="#222" stroke-width="2"/>
+  <circle cx="144" cy="433" r="7" fill="#111"/>
+  <circle cx="170" cy="443" r="5" fill="#3ddc3d" stroke="#1f7f1f" stroke-width="1.5"/>
+  <text x="89" y="401" text-anchor="middle" class="small">CH1</text>
+  <text x="144" y="401" text-anchor="middle" class="small">CH2</text>
+  <text x="120" y="552" text-anchor="middle" class="body">Acquires raw</text>
+  <text x="120" y="579" text-anchor="middle" class="body">two-channel data</text>
+
+  <line x1="220" y1="430" x2="260" y2="430" class="arrow"/>
+
+  <!-- Config -->
+  <rect x="260" y="342" rx="14" ry="14" width="120" height="175" class="panel" fill="#fff" stroke="#1f4ea8"/>
+  <circle cx="320" cy="388" r="18" fill="#1f4ea8"/>
+  <path d="M320 372 L324 380 L333 381 L326 387 L328 396 L320 391 L312 396 L314 387 L307 381 L316 380 Z" fill="#fff"/>
+  <text x="320" y="447" text-anchor="middle" class="body blue">Configured</text>
+  <text x="320" y="474" text-anchor="middle" class="body blue">by</text>
+  <text x="320" y="502" text-anchor="middle" class="body blue">StreamThruGPU.ini</text>
+
+  <line x1="380" y1="430" x2="420" y2="430" class="arrow"/>
+
+  <!-- Host RAM -->
+  <rect x="420" y="175" rx="18" ry="18" width="330" height="500" class="panel soft-blue" stroke="#1f4ea8"/>
+  <text x="585" y="248" text-anchor="middle" class="h1 blue">Host RAM</text>
+  <text x="585" y="282" text-anchor="middle" class="h2 blue">(Page-Locked / Pinned Memory)</text>
+
+  <rect x="470" y="345" rx="14" ry="14" width="105" height="220" fill="#edf3ff" stroke="#1f4ea8" stroke-width="3"/>
+  <text x="522.5" y="392" text-anchor="middle" class="h1 blue" style="font-size:20px;">Buffer A</text>
+  <rect x="493" y="430" rx="8" ry="8" width="59" height="95" fill="#ffffff" stroke="#1f4ea8" stroke-width="2"/>
+  <line x1="505" y1="453" x2="540" y2="453" stroke="#1f4ea8" stroke-width="2"/>
+  <line x1="505" y1="476" x2="540" y2="476" stroke="#1f4ea8" stroke-width="2"/>
+  <line x1="505" y1="499" x2="540" y2="499" stroke="#1f4ea8" stroke-width="2"/>
+
+  <rect x="600" y="345" rx="14" ry="14" width="105" height="220" fill="#eef9ef" stroke="#1d6b2a" stroke-width="3"/>
+  <text x="652.5" y="392" text-anchor="middle" class="h1 green" style="font-size:20px;">Buffer B</text>
+  <rect x="623" y="430" rx="8" ry="8" width="59" height="95" fill="#ffffff" stroke="#1d6b2a" stroke-width="2"/>
+  <line x1="635" y1="453" x2="670" y2="453" stroke="#1d6b2a" stroke-width="2"/>
+  <line x1="635" y1="476" x2="670" y2="476" stroke="#1d6b2a" stroke-width="2"/>
+  <line x1="635" y1="499" x2="670" y2="499" stroke="#1d6b2a" stroke-width="2"/>
+
+  <line x1="575" y1="470" x2="600" y2="470" stroke="#1f4ea8" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+
+  <text x="585" y="610" text-anchor="middle" class="body">While one buffer receives new data,</text>
+  <text x="585" y="637" text-anchor="middle" class="body">the other is processed</text>
+
+  <rect x="470" y="740" rx="14" ry="14" width="230" height="82" fill="#ffffff" stroke="#1f4ea8" stroke-width="3" stroke-dasharray="8 6"/>
+  <text x="585" y="780" text-anchor="middle" class="body blue">Continuous streaming</text>
+  <text x="585" y="808" text-anchor="middle" class="body blue">with alternating buffers</text>
+  <path d="M490 740 C470 705, 460 690, 458 675" fill="none" stroke="#1f4ea8" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#arrow)"/>
+  <path d="M680 740 C700 705, 710 690, 712 675" fill="none" stroke="#1f4ea8" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#arrow)"/>
+
+  <line x1="750" y1="430" x2="810" y2="430" class="arrow"/>
+
+  <!-- GPU -->
+  <rect x="810" y="110" rx="18" ry="18" width="360" height="620" class="panel soft-green" stroke="#1d6b2a"/>
+  <text x="990" y="182" text-anchor="middle" class="h1 green">NVIDIA GPU</text>
+  <rect x="1115" y="140" width="34" height="34" fill="#76b900" rx="3"/>
+  <path d="M1122 158 q10 -12 20 0 q-10 12 -20 0" fill="none" stroke="#fff" stroke-width="2"/>
+  <path d="M1126 158 q6 -7 12 0 q-6 7 -12 0" fill="none" stroke="#fff" stroke-width="2"/>
+
+  <rect x="840" y="220" rx="16" ry="16" width="300" height="230" fill="#f6fbf6" stroke="#1d6b2a" stroke-width="3"/>
+  <text x="990" y="275" text-anchor="middle" class="h1 green" style="font-size:22px;">Kernel 1:</text>
+  <text x="990" y="315" text-anchor="middle" class="h1 green" style="font-size:21px;">demodulationCrossCorrelation</text>
+  <text x="865" y="372" class="body">• Computes one correlation-matrix</text>
+  <text x="885" y="400" class="body">element per thread</text>
+  <text x="865" y="458" class="body">• Launches #segments × 64 threads</text>
+
+  <line x1="990" y1="450" x2="990" y2="500" class="arrow"/>
+
+  <rect x="840" y="500" rx="16" ry="16" width="300" height="180" fill="#f6fbf6" stroke="#1d6b2a" stroke-width="3"/>
+  <text x="990" y="570" text-anchor="middle" class="h1 green" style="font-size:22px;">Kernel 2:</text>
+  <text x="990" y="610" text-anchor="middle" class="h1 green" style="font-size:21px;">averageCrossCorrelation</text>
+  <text x="885" y="660" class="body">• Averages matrices across all segments</text>
+
+  <line x1="1170" y1="430" x2="1225" y2="430" class="arrow"/>
+
+  <!-- Output Matrix -->
+  <rect x="1225" y="245" rx="16" ry="16" width="170" height="360" class="panel soft-purple" stroke="#6a2fb8"/>
+  <text x="1310" y="305" text-anchor="middle" class="h1 purple" style="font-size:22px;">Mean</text>
+  <text x="1310" y="340" text-anchor="middle" class="h1 purple" style="font-size:22px;">Cross-Correlation</text>
+  <text x="1310" y="375" text-anchor="middle" class="h1 purple" style="font-size:22px;">Matrix</text>
+  <text x="1310" y="426" text-anchor="middle" class="body">Final 8 × 8 result</text>
+  <text x="1310" y="452" text-anchor="middle" class="body">(64 elements)</text>
+
+  <!-- heatmap -->
+  <g transform="translate(1260,490)">
+    <text x="-16" y="12" class="small">1</text>
+    <text x="-18" y="72" class="small">⋮</text>
+    <text x="-18" y="132" class="small">8</text>
+    <rect x="0" y="0" width="24" height="24" fill="#2246d9"/>
+    <rect x="24" y="0" width="24" height="24" fill="#1e74ef"/>
+    <rect x="48" y="0" width="24" height="24" fill="#39a8f7"/>
+    <rect x="72" y="0" width="24" height="24" fill="#58d2ef"/>
+    <rect x="96" y="0" width="24" height="24" fill="#8ce37b"/>
+    <rect x="120" y="0" width="24" height="24" fill="#d4e24b"/>
+    <rect x="144" y="0" width="24" height="24" fill="#ffb200"/>
+    <rect x="168" y="0" width="24" height="24" fill="#ff6200"/>
+
+    <rect x="0" y="24" width="24" height="24" fill="#2857e5"/>
+    <rect x="24" y="24" width="24" height="24" fill="#2d7ef2"/>
+    <rect x="48" y="24" width="24" height="24" fill="#45b6f6"/>
+    <rect x="72" y="24" width="24" height="24" fill="#6cd8d5"/>
+    <rect x="96" y="24" width="24" height="24" fill="#b8e56b"/>
+    <rect x="120" y="24" width="24" height="24" fill="#f0d43c"/>
+    <rect x="144" y="24" width="24" height="24" fill="#ff9a00"/>
+    <rect x="168" y="24" width="24" height="24" fill="#ff5d00"/>
+
+    <rect x="0" y="48" width="24" height="24" fill="#2e68ee"/>
+    <rect x="24" y="48" width="24" height="24" fill="#3691f4"/>
+    <rect x="48" y="48" width="24" height="24" fill="#52c2f3"/>
+    <rect x="72" y="48" width="24" height="24" fill="#89dfb0"/>
+    <rect x="96" y="48" width="24" height="24" fill="#d9e24f"/>
+    <rect x="120" y="48" width="24" height="24" fill="#ffc100"/>
+    <rect x="144" y="48" width="24" height="24" fill="#ff7f00"/>
+    <rect x="168" y="48" width="24" height="24" fill="#f14c00"/>
+
+    <rect x="0" y="72" width="24" height="24" fill="#2d7ef2"/>
+    <rect x="24" y="72" width="24" height="24" fill="#45b6f6"/>
+    <rect x="48" y="72" width="24" height="24" fill="#78d7e0"/>
+    <rect x="72" y="72" width="24" height="24" fill="#c9e55b"/>
+    <rect x="96" y="72" width="24" height="24" fill="#ffd000"/>
+    <rect x="120" y="72" width="24" height="24" fill="#ff9a00"/>
+    <rect x="144" y="72" width="24" height="24" fill="#ff6200"/>
+    <rect x="168" y="72" width="24" height="24" fill="#d93b00"/>
+
+    <rect x="0" y="96" width="24" height="24" fill="#39a8f7"/>
+    <rect x="24" y="96" width="24" height="24" fill="#58d2ef"/>
+    <rect x="48" y="96" width="24" height="24" fill="#a6e382"/>
+    <rect x="72" y="96" width="24" height="24" fill="#e7de46"/>
+    <rect x="96" y="96" width="24" height="24" fill="#ffb200"/>
+    <rect x="120" y="96" width="24" height="24" fill="#ff7f00"/>
+    <rect x="144" y="96" width="24" height="24" fill="#ef5600"/>
+    <rect x="168" y="96" width="24" height="24" fill="#bf2a00"/>
+
+    <rect x="0" y="120" width="24" height="24" fill="#58d2ef"/>
+    <rect x="24" y="120" width="24" height="24" fill="#8ce37b"/>
+    <rect x="48" y="120" width="24" height="24" fill="#d4e24b"/>
+    <rect x="72" y="120" width="24" height="24" fill="#ffb200"/>
+    <rect x="96" y="120" width="24" height="24" fill="#ff8900"/>
+    <rect x="120" y="120" width="24" height="24" fill="#f14c00"/>
+    <rect x="144" y="120" width="24" height="24" fill="#cd3500"/>
+    <rect x="168" y="120" width="24" height="24" fill="#9f2200"/>
+
+    <rect x="0" y="144" width="24" height="24" fill="#8ce37b"/>
+    <rect x="24" y="144" width="24" height="24" fill="#d4e24b"/>
+    <rect x="48" y="144" width="24" height="24" fill="#ffb200"/>
+    <rect x="72" y="144" width="24" height="24" fill="#ff7f00"/>
+    <rect x="96" y="144" width="24" height="24" fill="#ef5600"/>
+    <rect x="120" y="144" width="24" height="24" fill="#c93a00"/>
+    <rect x="144" y="144" width="24" height="24" fill="#a72a00"/>
+    <rect x="168" y="144" width="24" height="24" fill="#7f1b00"/>
+
+    <rect x="0" y="168" width="24" height="24" fill="#d4e24b"/>
+    <rect x="24" y="168" width="24" height="24" fill="#ffb200"/>
+    <rect x="48" y="168" width="24" height="24" fill="#ff8900"/>
+    <rect x="72" y="168" width="24" height="24" fill="#ef5600"/>
+    <rect x="96" y="168" width="24" height="24" fill="#bf2a00"/>
+    <rect x="120" y="168" width="24" height="24" fill="#9f2200"/>
+    <rect x="144" y="168" width="24" height="24" fill="#7f1b00"/>
+    <rect x="168" y="168" width="24" height="24" fill="#631200"/>
+    <text x="5" y="216" class="small">1</text>
+    <text x="92" y="216" class="small">…</text>
+    <text x="180" y="216" class="small">8</text>
+    <rect x="0" y="0" width="192" height="192" fill="none" stroke="#333" stroke-width="1.5"/>
+  </g>
+
+  <line x1="1395" y1="430" x2="1440" y2="430" class="arrow"/>
+
+  <!-- UI -->
+  <rect x="1440" y="245" rx="16" ry="16" width="140" height="360" class="panel soft-purple" stroke="#6a2fb8"/>
+  <text x="1510" y="308" text-anchor="middle" class="h1 purple" style="font-size:22px;">Quantum</text>
+  <text x="1510" y="343" text-anchor="middle" class="h1 purple" style="font-size:22px;">Measurement</text>
+  <text x="1510" y="378" text-anchor="middle" class="h1 purple" style="font-size:22px;">UI</text>
+  <text x="1510" y="430" text-anchor="middle" class="body">Real-time</text>
+  <text x="1510" y="456" text-anchor="middle" class="body">visualization</text>
+  <text x="1510" y="482" text-anchor="middle" class="body">via named pipe</text>
+  <rect x="1455" y="520" width="110" height="86" rx="8" ry="8" fill="#d8d8d8" stroke="#444" stroke-width="3"/>
+  <rect x="1468" y="532" width="84" height="55" fill="#fdfdfd" stroke="#666" stroke-width="1.5"/>
+  <path d="M1473 575 L1482 553 L1491 572 L1500 546 L1509 580 L1518 561 L1527 538 L1536 573 L1545 551" fill="none" stroke="#1f4ea8" stroke-width="3"/>
+  <line x1="1510" y1="606" x2="1510" y2="624" stroke="#555" stroke-width="4"/>
+  <line x1="1486" y1="624" x2="1534" y2="624" stroke="#555" stroke-width="4"/>
+
+  <!-- mapped memory -->
+  <line x1="990" y1="730" x2="990" y2="780" stroke="#1d6b2a" stroke-width="3" stroke-dasharray="8 6"/>
+  <rect x="810" y="780" rx="14" ry="14" width="330" height="100" fill="#ffffff" stroke="#1d6b2a" stroke-width="3"/>
+  <rect x="835" y="812" width="36" height="36" fill="#1d6b2a" opacity="0.12" stroke="#1d6b2a" stroke-width="2"/>
+  <rect x="843" y="820" width="20" height="20" fill="none" stroke="#1d6b2a" stroke-width="2"/>
+  <line x1="853" y1="820" x2="853" y2="840" stroke="#1d6b2a" stroke-width="1.5"/>
+  <line x1="843" y1="830" x2="863" y2="830" stroke="#1d6b2a" stroke-width="1.5"/>
+  <text x="920" y="822" class="h1 green" style="font-size:20px;">Mapped Memory</text>
+  <text x="920" y="852" class="body">Shared virtual address space</text>
+  <text x="920" y="878" class="body">reduces transfer overhead</text>
+
+  <!-- formula -->
+  <rect x="430" y="900" rx="14" ry="14" width="760" height="60" class="panel soft-gold" stroke="#d4a300"/>
+  <text x="810" y="940" text-anchor="middle" style="font: italic 20px Georgia, 'Times New Roman', serif; fill:#111;">
+    C(i,j) = (A_i − A_(i+8)) × (B_j − B_(j+8)),   i,j = 1..8
+  </text>
+</svg>
