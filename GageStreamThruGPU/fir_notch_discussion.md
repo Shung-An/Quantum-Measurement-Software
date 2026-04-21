@@ -205,3 +205,115 @@ This should be calibrated using data where the true physical signal is known to
 be uncorrelated. Otherwise, real physical correlation may be accidentally
 removed.
 
+## Correlation-Matrix Offset Correction
+
+The FIR/demodulation stage acts on the raw sample stream before the correlation
+matrix is formed. It can remove DC and the comb-notch frequencies, but it does
+not guarantee that the final correlation matrix has zero baseline.
+
+After the FIR, the measured correlation matrix can be thought of as:
+
+```text
+C_measured = C_physical + C_artifact
+```
+
+where `C_artifact` may come from residual pickup, ADC offset, gain mismatch,
+imperfect isolation, slow drift, or deterministic board/channel leakage.
+
+The diagonal offset in the correlation-matrix pipeline is likely intended as a
+second-stage correction:
+
+```text
+C_corrected[i,i] = C_measured[i,i] - offset[i]
+```
+
+or, more generally:
+
+```text
+C_corrected[i,j] = C_measured[i,j] - C_background[i,j]
+```
+
+This is useful when the residual finite correlation is stable and appears as a
+repeatable matrix-level baseline.
+
+The correction hierarchy is:
+
+```text
+FIR / demodulation:
+    removes sample-level DC and comb-notch-frequency components
+
+diagonal offset:
+    removes stable diagonal baseline in the correlation matrix
+
+full background matrix subtraction:
+    removes a stable 8x8 artifact pattern
+
+complex spectral correction:
+    removes frequency-dependent and phase-dependent leakage
+```
+
+## Why Adjacent-Matrix Subtraction Can Remove Signal
+
+Previously, an adjacent-matrix subtraction was used to reduce the finite
+correlation floor. For example:
+
+```text
+C_corrected[i,j] = C[i,j] - C[i+1,j]
+```
+
+or a similar subtraction between neighboring matrix elements.
+
+This behaves like a spatial high-pass filter across the correlation matrix. It
+can remove smooth baseline structure, but it can also remove real physical
+signal.
+
+The issue is that:
+
+```text
+C[i,j] = real[i,j] + artifact[i,j]
+C[i+1,j] = real[i+1,j] + artifact[i+1,j]
+```
+
+so adjacent subtraction gives:
+
+```text
+C[i,j] - C[i+1,j]
+  = (real[i,j] - real[i+1,j]) + (artifact[i,j] - artifact[i+1,j])
+```
+
+If the real signal is broad, smooth, symmetric, or present in neighboring
+matrix elements, it is partially or fully subtracted away.
+
+Therefore, adjacent-matrix subtraction is useful as a diagnostic, but it is
+risky as the final correction method.
+
+## Safer Baseline Removal
+
+A safer approach is to measure the artifact separately and subtract it as a
+background:
+
+```text
+C_final = C_measurement - mean(C_calibration)
+```
+
+where `C_calibration` is measured under the same acquisition settings but with
+no intentional physical correlation.
+
+The uncertainty should be propagated:
+
+```text
+sigma_final = sqrt(sigma_measurement^2 + sigma_calibration^2)
+```
+
+This avoids using neighboring matrix elements from the same measurement as the
+reference, so it is less likely to cancel the physical signal.
+
+Practical recommendation:
+
+```text
+1. Use the FIR/demodulation as the first-stage rejection.
+2. Take a no-signal calibration run.
+3. Estimate the stable diagonal or full 8x8 background matrix.
+4. Subtract that calibrated background from later measurements.
+5. Use adjacent-matrix subtraction only as a visualization or diagnostic check.
+```
