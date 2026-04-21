@@ -158,11 +158,11 @@ static int WriteAllWithAbort(HANDLE hPipe, const void* buf, DWORD totalBytes) {
  *              the function may start or stop the experiment, or send data back to the client.
  * Parameters:
  *   - hPipe: A handle to the pipe (HANDLE) for communication.
- *   - dataA: Pointer to channel-A samples (short*), contiguous by segments.
- *   - dataB: Pointer to channel-B samples (short*), contiguous by segments.
+ *   - dataA: Pointer to card-0 samples (short*), interleaved ABAB by segment.
+ *   - dataB: Pointer to card-1 samples (short*), interleaved ABAB by segment.
  *   - corrMatrix: Pointer to an array of doubles (double*) representing the correlation matrix to send.
  *   - segmentIndex: The index (int) of the data segment to send.
- *   - bytesToSend: The number of BYTES per-channel to send for this segment (DWORD).
+ *   - bytesToSend: The number of BYTES for the extracted UI channel to send for this segment (DWORD).
  * Returns:
  *   - 0: No data to process.
  *   - 1: Error occurred.
@@ -206,14 +206,17 @@ extern "C" int handleClientRequests(
         return 1;
     }
 
-    const int samplesPerSegment = static_cast<int>(bytesToSend / sizeof(short));
-    short* segA = dataA + static_cast<size_t>(segmentIndex) * samplesPerSegment;
-    short* segB = dataB + static_cast<size_t>(segmentIndex) * samplesPerSegment;
+    const int samplesPerChannel = static_cast<int>(bytesToSend / sizeof(short));
+    const int inputChannels = 2;
+    const int sourceChannelA = 0; // Board 1 ch1
+    const int sourceChannelB = 1; // Board 2 ch2
+    short* segA = dataA + static_cast<size_t>(segmentIndex) * samplesPerChannel * inputChannels;
+    short* segB = dataB + static_cast<size_t>(segmentIndex) * samplesPerChannel * inputChannels;
 
     const int CH_S = 16 * 1024; // samples per channel per chunk
     std::vector<short> scratch; scratch.resize(static_cast<size_t>(CH_S) * 2);
 
-    int remainingSamples = samplesPerSegment;
+    int remainingSamples = samplesPerChannel;
     short* pA = segA;
     short* pB = segB;
 
@@ -223,16 +226,16 @@ extern "C" int handleClientRequests(
         int thisS = (remainingSamples < CH_S) ? remainingSamples : CH_S;
 
         for (int i = 0; i < thisS; ++i) {
-            scratch[2 * i] = pA[i];
-            scratch[2 * i + 1] = pB[i];
+            scratch[2 * i] = pA[i * inputChannels + sourceChannelA];
+            scratch[2 * i + 1] = pB[i * inputChannels + sourceChannelB];
         }
 
         const DWORD bytesThisChunk = static_cast<DWORD>(thisS * 2 * sizeof(short));
         int rc = WriteAllWithAbort(hPipe, scratch.data(), bytesThisChunk);
         if (rc != 0) return rc; // 4=abort, 1=error
 
-        pA += thisS;
-        pB += thisS;
+        pA += thisS * inputChannels;
+        pB += thisS * inputChannels;
         remainingSamples -= thisS;
     }
 

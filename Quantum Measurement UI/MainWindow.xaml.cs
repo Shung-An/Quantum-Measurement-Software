@@ -25,14 +25,14 @@ namespace Quantum_measurement_UI
             InitializeComponent();          // Initialize the UI components
 
 
-            motorController = new MotorController();         // Initialize MotorController instance
+            motorController = new MotorController(BypassUsbConnections);         // Initialize MotorController instance
             DataContext = this;
             esp300Controller = new ESP300Controller
             {
                 Axis = 1                  // Axis number
             };
 
-            esp300Controller.Connect();         // Connect to the ESP300 controller
+            esp300Controller.Connect(bypassUsbConnection: BypassUsbConnections);         // Connect to the ESP300 controller
 
             // Initialize charts
             InitializeSignalChart();         // Initialize the signal chart data                                          

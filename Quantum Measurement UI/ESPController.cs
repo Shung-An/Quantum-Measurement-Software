@@ -20,6 +20,7 @@ namespace Quantum_measurement_UI
         public double currentPosition { get; set; } = 0.0;
         // Connection state
         public bool IsConnected { get; private set; }
+        public bool IsBypassed { get; private set; }
 
 
         // VISA communication objects
@@ -35,8 +36,16 @@ namespace Quantum_measurement_UI
         /// </summary>
         /// <param name="visaAddress">VISA address of the controller (default: GPIB0::1::INSTR)</param>
         /// <returns>True if connection was successful</returns>
-        public bool Connect(string visaAddress = "GPIB0::1::INSTR")
+        public bool Connect(string visaAddress = "GPIB0::1::INSTR", bool bypassUsbConnection = false)
         {
+            if (bypassUsbConnection)
+            {
+                IsBypassed = true;
+                IsConnected = true;
+                Console.WriteLine("ESP300 USB/GPIB connection bypassed.");
+                return true;
+            }
+
             try
             {
                 _resourceManager = new ResourceManager();
@@ -164,6 +173,11 @@ namespace Quantum_measurement_UI
         /// </summary>
         public void Reset()
         {
+            if (IsBypassed)
+            {
+                return;
+            }
+
             // Send the reset command to the controller
             SendCommand("RS");
             // Wait for the reset to complete
@@ -179,6 +193,9 @@ namespace Quantum_measurement_UI
         {
             lock (_ioLock)
             {
+                if (IsBypassed)
+                    return "No delay stage errors detected (USB bypass enabled).";
+
                 if (_session == null || formattedIO == null)
                     return "ESP300 not connected.";
 
@@ -221,6 +238,12 @@ namespace Quantum_measurement_UI
         {
             lock (_ioLock)
             {
+                if (IsBypassed)
+                {
+                    ApplySimulatedCommand(command);
+                    return;
+                }
+
                 if (formattedIO == null)
                     throw new InvalidOperationException("VISA session not initialized");
 
@@ -236,6 +259,11 @@ namespace Quantum_measurement_UI
         {
             lock (_ioLock)
             {
+                if (IsBypassed)
+                {
+                    return GetSimulatedQueryResponse(command);
+                }
+
                 if (formattedIO == null)
                     throw new InvalidOperationException("VISA session not initialized");
 
@@ -252,6 +280,9 @@ namespace Quantum_measurement_UI
         {
             lock (_ioLock)
             {
+                if (IsBypassed)
+                    return "No delay stage errors detected (USB bypass enabled).";
+
                 if (_session == null || formattedIO == null)
                     return "ESP300 not connected.";
 
@@ -302,6 +333,13 @@ namespace Quantum_measurement_UI
         {
             lock (_ioLock)
             {
+                if (IsBypassed)
+                {
+                    IsConnected = false;
+                    IsBypassed = false;
+                    return;
+                }
+
                 // Best-effort commands; swallow errors if the link is already gone.
                 try
                 {
@@ -326,6 +364,70 @@ namespace Quantum_measurement_UI
 
                 IsConnected = false;
             }
+        }
+
+        private void ApplySimulatedCommand(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command))
+            {
+                return;
+            }
+
+            string trimmed = command.Trim();
+            string axisPrefix = Axis.ToString(CultureInfo.InvariantCulture);
+
+            if (trimmed.StartsWith($"{axisPrefix}PA", StringComparison.OrdinalIgnoreCase) &&
+                double.TryParse(trimmed.Substring($"{axisPrefix}PA".Length), NumberStyles.Float, CultureInfo.InvariantCulture, out double absolutePosition))
+            {
+                currentPosition = absolutePosition;
+            }
+            else if (trimmed.StartsWith($"{axisPrefix}PR", StringComparison.OrdinalIgnoreCase) &&
+                double.TryParse(trimmed.Substring($"{axisPrefix}PR".Length), NumberStyles.Float, CultureInfo.InvariantCulture, out double relativePosition))
+            {
+                currentPosition += relativePosition;
+            }
+        }
+
+        private string GetSimulatedQueryResponse(string command)
+        {
+            string trimmed = command?.Trim() ?? string.Empty;
+            string axisPrefix = Axis.ToString(CultureInfo.InvariantCulture);
+
+            if (trimmed.Equals($"{axisPrefix}TP?", StringComparison.OrdinalIgnoreCase))
+            {
+                return currentPosition.ToString("G17", CultureInfo.InvariantCulture);
+            }
+
+            if (trimmed.Equals($"{axisPrefix}MD?", StringComparison.OrdinalIgnoreCase))
+            {
+                return "1";
+            }
+
+            if (trimmed.Equals($"{axisPrefix}ID?", StringComparison.OrdinalIgnoreCase))
+            {
+                return "ESP300 USB BYPASS";
+            }
+
+            if (trimmed.Equals($"{axisPrefix}VA?", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals($"{axisPrefix}VU?", StringComparison.OrdinalIgnoreCase))
+            {
+                return Velocity.ToString("G17", CultureInfo.InvariantCulture);
+            }
+
+            if (trimmed.Equals($"{axisPrefix}AC?", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals($"{axisPrefix}AU?", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals($"{axisPrefix}AG?", StringComparison.OrdinalIgnoreCase))
+            {
+                return Acceleration.ToString("G17", CultureInfo.InvariantCulture);
+            }
+
+            if (trimmed.Equals("TB?", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("ER?", StringComparison.OrdinalIgnoreCase))
+            {
+                return "0";
+            }
+
+            return "0";
         }
 
         private void ResetIoStateAfterReadFailure()

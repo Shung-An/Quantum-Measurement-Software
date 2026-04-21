@@ -22,6 +22,8 @@ namespace Quantum_measurement_UI
     {
         #region Constants
 
+        private static readonly bool BypassUsbConnections = true;
+
         private volatile bool EnableFFT = false; // default off
 
         private int selectedDAQChannel = 0; // Default to Channel 0

@@ -57,7 +57,7 @@ namespace Quantum_measurement_UI
         {
             ChannelAValues = new ChartValues<double>();
             ChannelBValues = new ChartValues<double>();
-            int dataPointCount = DataPoints / 2;
+            int dataPointCount = DataPoints;
             for (int i = 0; i < dataPointCount; i++)
             {
                 ChannelAValues.Add(0);

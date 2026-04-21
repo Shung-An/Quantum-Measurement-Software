@@ -5,11 +5,23 @@ namespace Quantum_measurement_UI
 {
     public class MotorController
     {
-        private CmdLib8742 cmdLib; // Library for communicating with the motor controller
+        private CmdLib8742? cmdLib; // Library for communicating with the motor controller
+        private readonly Dictionary<int, int> simulatedPositions = new Dictionary<int, int>();
         public string deviceKey;  // Unique key identifying the motor controller device
+        public bool IsBypassed { get; }
 
-        public MotorController()
+        public MotorController(bool bypassUsbConnection = false)
         {
+            IsBypassed = bypassUsbConnection;
+            deviceKey = string.Empty;
+
+            if (IsBypassed)
+            {
+                deviceKey = "USB_BYPASS";
+                Console.WriteLine("Motor controller USB connection bypassed.");
+                return;
+            }
+
             InitializeDevice();
         }
 
@@ -32,7 +44,13 @@ namespace Quantum_measurement_UI
         // Set the current position of the specified motor to zero
         public bool SetZeroPosition(int motorNumber)
         {
-            bool status = cmdLib.SetZeroPosition(deviceKey, motorNumber);
+            if (IsBypassed)
+            {
+                simulatedPositions[motorNumber] = 0;
+                return true;
+            }
+
+            bool status = cmdLib!.SetZeroPosition(deviceKey, motorNumber);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not set the current position.");
@@ -44,7 +62,13 @@ namespace Quantum_measurement_UI
         public bool GetCurrentPosition(int motorNumber, out int position)
         {
             position = 0;
-            bool status = cmdLib.GetPosition(deviceKey, motorNumber, ref position);
+            if (IsBypassed)
+            {
+                simulatedPositions.TryGetValue(motorNumber, out position);
+                return true;
+            }
+
+            bool status = cmdLib!.GetPosition(deviceKey, motorNumber, ref position);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not get the current position.");
@@ -54,8 +78,12 @@ namespace Quantum_measurement_UI
 
         public bool StopMotion(string deviceKey, int motorNumber)
         {
+            if (IsBypassed)
+            {
+                return true;
+            }
 
-            bool status = cmdLib.AbortMotion(deviceKey);
+            bool status = cmdLib!.AbortMotion(deviceKey);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not stop the motor.");
@@ -66,7 +94,14 @@ namespace Quantum_measurement_UI
         // Move the specified motor by a relative number of steps
         public bool MoveRelative(int motorNumber, int relativeSteps)
         {
-            bool status = cmdLib.RelativeMove(deviceKey, motorNumber, relativeSteps);
+            if (IsBypassed)
+            {
+                simulatedPositions.TryGetValue(motorNumber, out int currentPosition);
+                simulatedPositions[motorNumber] = currentPosition + relativeSteps;
+                return true;
+            }
+
+            bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, relativeSteps);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not perform relative move.");
@@ -77,7 +112,12 @@ namespace Quantum_measurement_UI
         // Move the specified motor by a relative number of steps
         public bool MovePlus10(int motorNumber)
         {
-            bool status = cmdLib.RelativeMove(deviceKey, motorNumber, 10);
+            if (IsBypassed)
+            {
+                return MoveRelative(motorNumber, 10);
+            }
+
+            bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, 10);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not perform relative move.");
@@ -87,7 +127,12 @@ namespace Quantum_measurement_UI
         // Move the specified motor by a relative number of steps
         public bool MoveMinus10(int motorNumber)
         {
-            bool status = cmdLib.RelativeMove(deviceKey, motorNumber, -10);
+            if (IsBypassed)
+            {
+                return MoveRelative(motorNumber, -10);
+            }
+
+            bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, -10);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not perform relative move.");
@@ -97,7 +142,12 @@ namespace Quantum_measurement_UI
         // Move the specified motor by a relative number of steps
         public bool MovePlus1(int motorNumber)
         {
-            bool status = cmdLib.RelativeMove(deviceKey, motorNumber, 1);
+            if (IsBypassed)
+            {
+                return MoveRelative(motorNumber, 1);
+            }
+
+            bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, 1);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not perform relative move.");
@@ -107,7 +157,12 @@ namespace Quantum_measurement_UI
         // Move the specified motor by a relative number of steps
         public bool MoveMinus1(int motorNumber)
         {
-            bool status = cmdLib.RelativeMove(deviceKey, motorNumber, -1);
+            if (IsBypassed)
+            {
+                return MoveRelative(motorNumber, -1);
+            }
+
+            bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, -1);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not perform relative move.");
@@ -118,7 +173,13 @@ namespace Quantum_measurement_UI
         // Move the specified motor to an absolute target position
         public bool MoveToPosition(int motorNumber, int targetPosition)
         {
-            bool status = cmdLib.AbsoluteMove(deviceKey, motorNumber, targetPosition);
+            if (IsBypassed)
+            {
+                simulatedPositions[motorNumber] = targetPosition;
+                return true;
+            }
+
+            bool status = cmdLib!.AbsoluteMove(deviceKey, motorNumber, targetPosition);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not perform absolute move.");
@@ -129,8 +190,13 @@ namespace Quantum_measurement_UI
         // Check if the motion of the specified motor is complete
         public bool IsMotionDone(int motorNumber, out bool isMotionDone)
         {
-            isMotionDone = false;
-            bool status = cmdLib.GetMotionDone(deviceKey, motorNumber, ref isMotionDone);
+            isMotionDone = IsBypassed;
+            if (IsBypassed)
+            {
+                return true;
+            }
+
+            bool status = cmdLib!.GetMotionDone(deviceKey, motorNumber, ref isMotionDone);
             if (!status)
             {
                 Console.WriteLine("I/O Error: Could not get motion done status.");
@@ -142,15 +208,20 @@ namespace Quantum_measurement_UI
         public void Shutdown()
         {
             Console.WriteLine("Shutting down motor controller.");
-            cmdLib.Shutdown();
+            cmdLib?.Shutdown();
         }
 
         // Check the motor controller for any error messages
         // Check the motor controller for any error messages
         public void CheckForErrors()
         {
+            if (IsBypassed)
+            {
+                return;
+            }
+
             string errorMsg = string.Empty;
-            bool status = cmdLib.GetErrorMsg(deviceKey, ref errorMsg);
+            bool status = cmdLib!.GetErrorMsg(deviceKey, ref errorMsg);
 
             if (!status)
             {

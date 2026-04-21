@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "D:/Quantum Squeezing Project/DataFiles"
+		},
+		{
+			"path": "../Andy test/GageStreamThruGPU-FFT"
 		}
 	],
 	"settings": {

@@ -175,7 +175,7 @@ extern "C" {
 	extern void initializeArrayWithCuda(double* dev_array, int size, double value);
 	extern int CPU_Equation_PlusOne(void* buffer, __int64 length, double* gpu_average_matrix);
 	extern HANDLE createAndConnectPipe(const char* pipeName, DWORD bufferSize);
-	extern int handleClientRequests(HANDLE hPipe, short* dataA, short* dataB, double* corrMatrix, int segmentIndex, DWORD bytesToSend, int choice);
+	extern int handleClientRequests(HANDLE hPipe, short* dataA, short* dataB, double* corrMatrix, int segmentIndex, DWORD bytesToSend);
 	extern bool CheckForRequest(HANDLE hPipe);
 
 #ifdef __cplusplus
@@ -325,7 +325,7 @@ int _tmain()
 	while (1) {
 
 		// Check if there is any request from the client
-		command = handleClientRequests(raw_signal_hPipe, NULL, NULL, NULL, 0, 0, 0);
+		command = handleClientRequests(raw_signal_hPipe, NULL, NULL, NULL, 0, 0);
 
 		if (command == 2) {
 
@@ -1330,6 +1330,7 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 	BOOL g_cal_valid = FALSE;// Size of one segment in the input data 
 	int gpu_skip0_samples = 0;
 	int gpu_skip1_samples = 0;
+	#define BYPASS_CALIBRATION_EDGE_ALGORITHM 1
 
 	TCHAR msg[256] = { 0 };
 
@@ -1856,6 +1857,16 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 				const  int   calChan0 = 1;    // Data_1 ch2 -> index 1
 				const  int   calChan1 = 0;    // Data_2 ch1 -> index 0
 
+				if (BYPASS_CALIBRATION_EDGE_ALGORITHM && !cal_done)
+				{
+					g_delta_samples = 0;
+					gpu_skip0_samples = 0;
+					gpu_skip1_samples = 0;
+					g_cal_valid = TRUE;
+					cal_done = TRUE;
+					printf("\nCAL: calibration edge algorithm bypassed; using zero GPU skip offsets.\n");
+				}
+
 				// -------------------------------------------------
 				// 1) One-time calibration using HOST work buffers
 				// -------------------------------------------------
@@ -2112,7 +2123,7 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 				short* ipcBuf0 = (short*)pWorkBuffer1 + gpu_skip0_samples ;
 				short* ipcBuf1 = (short*)pWorkBuffer2 + gpu_skip1_samples ;
 
-				int result = handleClientRequests(raw_signal_hPipe, ipcBuf0, ipcBuf1, h_odata, 0, 200, 0);  // 200 is the number of bytes to send, check request from client and send data
+				int result = handleClientRequests(raw_signal_hPipe, ipcBuf0, ipcBuf1, h_odata, 0, 200);  // 200 bytes => 100 extracted samples per UI channel
 				if (result == 4) {
 					SetEvent(g_hStreamAbort[i]);
 

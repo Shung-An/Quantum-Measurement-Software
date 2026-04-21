@@ -388,6 +388,12 @@ namespace Quantum_measurement_UI
 
         private async Task<bool> Connection()
         {
+            if (BypassUsbConnections)
+            {
+                AppendMessage("USB bypass enabled: skipping QuantumDAQService connection.");
+                return true;
+            }
+
             try
             {
                 EnsureDAQServiceRunning();
@@ -881,32 +887,24 @@ namespace Quantum_measurement_UI
             {
                 try
                 {
-                    var localPipe = daqPipe;
-                    if (localPipe != null && localPipe.IsConnected)
+                    if (BypassUsbConnections)
                     {
-                        string response = await localPipe.SendCommandAsync("ReadAI");
-
-                        string[] tokens = response.Split(',');
-                        for (int i = 0; i < tokens.Length && i < daqBuffer.Length; i++)
-                        {
-                            if (double.TryParse(tokens[i], out double value))
-                                daqBuffer[i] = value;
-                        }
+                        GenerateSimulatedDaqBuffer();
 
                         Dispatcher.Invoke(() =>
                         {
                             try
                             {
-                                UpdateAIMonitor();        // 🔥 Update AI Power Checker functions
+                                UpdateAIMonitor();
                             }
                             catch (Exception ex)
                             {
                                 Console.WriteLine("UI update error (UpdateAIMonitor): " + ex);
                             }
+
                             try
                             {
-                            UpdateDAQChart();         // 🔥 Existing: Update 6-channel DAQ chart
-
+                                UpdateDAQChart();
                             }
                             catch (Exception ex)
                             {
@@ -915,13 +913,13 @@ namespace Quantum_measurement_UI
                         });
 
                         motorVsAi5Counter++;
-                        if (motorVsAi5Counter >= 5) // 🔥 Every 5 * 200ms = 1 second
+                        if (motorVsAi5Counter >= 5)
                         {
                             Dispatcher.Invoke(() =>
                             {
                                 try
                                 {
-                                    UpdateMotorVsAI5(); // 🔥 Existing: Update Motor vs AI5 slower
+                                    UpdateMotorVsAI5();
                                 }
                                 catch (Exception ex)
                                 {
@@ -929,6 +927,59 @@ namespace Quantum_measurement_UI
                                 }
                             });
                             motorVsAi5Counter = 0;
+                        }
+                    }
+                    else
+                    {
+                        var localPipe = daqPipe;
+                        if (localPipe != null && localPipe.IsConnected)
+                        {
+                            string response = await localPipe.SendCommandAsync("ReadAI");
+
+                            string[] tokens = response.Split(',');
+                            for (int i = 0; i < tokens.Length && i < daqBuffer.Length; i++)
+                            {
+                                if (double.TryParse(tokens[i], out double value))
+                                    daqBuffer[i] = value;
+                            }
+
+                            Dispatcher.Invoke(() =>
+                            {
+                                try
+                                {
+                                    UpdateAIMonitor();        // 🔥 Update AI Power Checker functions
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("UI update error (UpdateAIMonitor): " + ex);
+                                }
+                                try
+                                {
+                                UpdateDAQChart();         // 🔥 Existing: Update 6-channel DAQ chart
+
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine("UI update error (UpdateDAQChart): " + ex);
+                                }
+                            });
+
+                            motorVsAi5Counter++;
+                            if (motorVsAi5Counter >= 5) // 🔥 Every 5 * 200ms = 1 second
+                            {
+                                Dispatcher.Invoke(() =>
+                                {
+                                    try
+                                    {
+                                        UpdateMotorVsAI5(); // 🔥 Existing: Update Motor vs AI5 slower
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine("UI update error (MotorVsAI5): " + ex);
+                                    }
+                                });
+                                motorVsAi5Counter = 0;
+                            }
                         }
                     }
 
@@ -950,6 +1001,23 @@ namespace Quantum_measurement_UI
                 catch (Exception ex)
                 {
                     Console.WriteLine("Auto read error: " + ex);
+                }
+            }
+        }
+
+        private void GenerateSimulatedDaqBuffer()
+        {
+            double t = DateTime.UtcNow.TimeOfDay.TotalSeconds;
+
+            for (int i = 0; i < daqBuffer.Length; i += 6)
+            {
+                double phase = t + (i / 6) * 0.002;
+                for (int ch = 0; ch < 6 && i + ch < daqBuffer.Length; ch++)
+                {
+                    double baseline = 0.45 + ch * 0.03;
+                    double signal = 0.08 * Math.Sin((phase * 2.0 * Math.PI) + ch * 0.45);
+                    double noise = (Random.Shared.NextDouble() - 0.5) * 0.01;
+                    daqBuffer[i + ch] = baseline + signal + noise;
                 }
             }
         }
@@ -1158,7 +1226,7 @@ namespace Quantum_measurement_UI
 
         private void StartDAQButton_Click(object sender, RoutedEventArgs e)
         {
-            if (daqPipe == null || !daqPipe.IsConnected)
+            if (!BypassUsbConnections && (daqPipe == null || !daqPipe.IsConnected))
             {
                 AppendMessage("DAQ Service not connected.");
                 return;

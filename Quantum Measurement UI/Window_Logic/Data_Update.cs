@@ -499,7 +499,7 @@ namespace Quantum_measurement_UI
         /// </summary>
         private void UpdateChart()
         {
-            int dataPointCount = DataPoints / 2;
+            int dataPointCount = DataPoints;
 
             if (_signalSeriesA == null || _signalSeriesB == null || SignalPlotModel == null)
             {
