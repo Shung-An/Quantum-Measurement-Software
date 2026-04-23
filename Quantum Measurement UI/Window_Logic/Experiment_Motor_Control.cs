@@ -459,6 +459,9 @@ namespace Quantum_measurement_UI
             // Get lists from UI
             var samples = GetSelectedSamples();
             var tags = GetSelectedTags();
+            bool powerDetectorAttenuatorApplied = PowerDetectorAttenuatorAppliedCheckBox.IsChecked == true;
+            double powerDetectorAttenuatorTotalDb = powerDetectorAttenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0;
+            double powerDetectorAttenuatorCorrectionFactor = powerDetectorAttenuatorApplied ? PowerDetectorAttenuatorCorrectionFactor : 1.0;
 
             // Create the metadata object with all fields
             var meta = new
@@ -485,7 +488,12 @@ namespace Quantum_measurement_UI
                 PhysicsData = new
                 {
                     Temperature_K = temperatureK,
-                    OnSamplePower_mW = onSamplePowerMw
+                    OnSamplePower_mW = onSamplePowerMw,
+                    PowerDetectorAttenuatorApplied = powerDetectorAttenuatorApplied,
+                    PowerDetectorAttenuatorCount = powerDetectorAttenuatorApplied ? 2 : 0,
+                    PowerDetectorAttenuatorEach_dB = powerDetectorAttenuatorApplied ? 10.0 : 0.0,
+                    PowerDetectorAttenuatorTotal_dB = powerDetectorAttenuatorTotalDb,
+                    PowerDetectorAttenuatorCorrectionFactor = powerDetectorAttenuatorCorrectionFactor
                 }
             };
 

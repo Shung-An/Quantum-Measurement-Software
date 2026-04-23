@@ -89,5 +89,10 @@ namespace Quantum_measurement_UI
         [JsonPropertyName("ConversionFactor_V2_rad2")] public double ConversionFactor_V2_rad2 { get; set; }
         [JsonPropertyName("Temperature_K")] public double? Temperature_K { get; set; }
         [JsonPropertyName("OnSamplePower_mW")] public double? OnSamplePower_mW { get; set; }
+        [JsonPropertyName("PowerDetectorAttenuatorApplied")] public bool PowerDetectorAttenuatorApplied { get; set; }
+        [JsonPropertyName("PowerDetectorAttenuatorCount")] public int PowerDetectorAttenuatorCount { get; set; }
+        [JsonPropertyName("PowerDetectorAttenuatorEach_dB")] public double PowerDetectorAttenuatorEach_dB { get; set; }
+        [JsonPropertyName("PowerDetectorAttenuatorTotal_dB")] public double PowerDetectorAttenuatorTotal_dB { get; set; }
+        [JsonPropertyName("PowerDetectorAttenuatorCorrectionFactor")] public double PowerDetectorAttenuatorCorrectionFactor { get; set; }
     }
 }

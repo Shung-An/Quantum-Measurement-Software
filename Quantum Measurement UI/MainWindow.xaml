@@ -322,6 +322,13 @@
                                         <TextBox Name="OnSamplePowerInput" Width="100" Text=""/>
                                         <TextBlock Text="mW" VerticalAlignment="Center" Margin="6,0,0,0"/>
                                     </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="5">
+                                        <TextBlock Text="Attenuator:" Width="70" VerticalAlignment="Center"/>
+                                        <CheckBox Name="PowerDetectorAttenuatorAppliedCheckBox"
+                                                  Content="2 x 10 dB on power detector"
+                                                  IsChecked="True"
+                                                  VerticalAlignment="Center"/>
+                                    </StackPanel>
 
                                     <Label Content="Select Sample(s):" FontWeight="Bold" Margin="0,5,0,0"/>
                                     <Border BorderBrush="Gray" BorderThickness="1" CornerRadius="3" Height="80" Margin="5">

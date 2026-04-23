@@ -171,10 +171,12 @@ namespace Quantum_measurement_UI
                 // === Step 1: Average voltages for each detector ===
                 double Vdet1 = (DAQChannel1Values[^1] + DAQChannel2Values[^1]) / 2.0;
                 double Vdet2 = (DAQChannel3Values[^1] + DAQChannel4Values[^1]) / 2.0;
+                bool attenuatorApplied = PowerDetectorAttenuatorAppliedCheckBox.IsChecked == true;
+                double powerCorrectionFactor = attenuatorApplied ? PowerDetectorAttenuatorCorrectionFactor : 1.0;
 
                 // === Step 2: Convert to optical power (W) ===
-                double P1 = Vdet1 * VtoW;
-                double P2 = Vdet2 * VtoW;
+                double P1 = Vdet1 * VtoW * powerCorrectionFactor;
+                double P2 = Vdet2 * VtoW * powerCorrectionFactor;
 
                 // === Step 3: Photon number per pulse ===
                 double N1 = P1 / (photonEnergy_J * repRate);
@@ -214,6 +216,7 @@ namespace Quantum_measurement_UI
 
                 // === Optional debug logs ===
 
+                LogExperimentEvent($"Power detector attenuator applied = {attenuatorApplied}, total = {(attenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, factor = {powerCorrectionFactor:F1}");
                 LogExperimentEvent($"Vdet1 = {Vdet1:F3} V, P1 = {P1 * 1e3:F2} mW, N1 = {N1:E2}");
                 LogExperimentEvent($"Vdet2 = {Vdet2:F3} V, P2 = {P2 * 1e3:F2} mW, N2 = {N2:E2}");
                 LogExperimentEvent($"Sensitivity = {sensitivity:E2} V/photon");
@@ -222,6 +225,7 @@ namespace Quantum_measurement_UI
                 LogExperimentEvent($"Conversion Factor = {conversionFactor_V2_per_rad2:E2} V²/rad²");
                 LogExperimentEvent($"Shot Noise Result = {noise_μrad2_sqrtHz:F2} μrad²/√Hz");
 
+                LogSensitivity($"Power Detector Attenuator Applied = {attenuatorApplied}, Total = {(attenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, Correction Factor = {powerCorrectionFactor:F1}");
                 LogSensitivity($"Vdet1 = {Vdet1:F3} V, P1 = {P1 * 1e3:F2} mW, N1 = {N1:E2}");
                 LogSensitivity($"Vdet2 = {Vdet2:F3} V, P2 = {P2 * 1e3:F2} mW, N2 = {N2:E2}");
                 LogSensitivity($"Sensitivity = {sensitivity:E2} V/photon");
