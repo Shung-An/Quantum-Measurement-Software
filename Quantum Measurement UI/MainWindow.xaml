@@ -326,7 +326,7 @@
                                         <TextBlock Text="Attenuator:" Width="70" VerticalAlignment="Center"/>
                                         <CheckBox Name="PowerDetectorAttenuatorAppliedCheckBox"
                                                   Content="2 x 10 dB on power detector"
-                                                  IsChecked="True"
+                                                  IsChecked="False"
                                                   VerticalAlignment="Center"/>
                                     </StackPanel>
 

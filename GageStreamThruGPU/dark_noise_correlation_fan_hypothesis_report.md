@@ -56,6 +56,53 @@ This is a strong suspect because the correlation problem appears after a delay, 
 - increased electronic noise after the system warms up,
 - reduced airflow around the acquisition card.
 
+## Reference Correlation Calibration Test
+
+A reference-channel correction was also tested as a possible way to remove the unwanted correlation.
+
+The idea was to use the two non-signal channels as a reference correlation and subtract that from the signal-channel correlation:
+
+```text
+C_corrected = C_signal - alpha * C_reference
+```
+
+where:
+
+```text
+C_signal    = correlation from the normal signal channels
+C_reference = correlation from the other two channels
+alpha       = scale factor
+```
+
+Two versions were considered:
+
+1. A background/reference matrix version, where the reference correlation is measured separately and subtracted later.
+2. A same-kernel version, where `corrValueRef` is evaluated inside the CUDA cross-correlation kernel and subtracted immediately:
+
+```text
+aggregatedCorrMatrix = corrValue - alpha * corrValueRef
+```
+
+The same-kernel version matched the intended real-time structure better, because each segment would be corrected before the matrix reduction step.
+
+However, the test made the dark-noise result worse rather than better. This suggests that the reference-channel correlation is not a clean copy of the unwanted artifact in the signal-channel correlation.
+
+Likely reasons:
+
+- The reference channels may contain calibration or synchronization structure rather than only background pickup.
+- The artifact is not equally distributed across all four channels.
+- A fixed `alpha` is probably not valid for all matrix elements.
+- The unwanted correlation may be frequency-dependent, especially near the previously observed 250 MHz component.
+- Subtracting the reference per segment can add noise if the reference fluctuation is not truly correlated with the signal-channel error.
+
+The result of this calibration test is therefore negative:
+
+```text
+Reference-channel subtraction is not currently a reliable correction.
+```
+
+This is useful information. It means the abnormal correlation should not be treated as a simple removable offset between channel pairs. The problem is more likely related to hardware behavior, timing, clocking, or thermal stability.
+
 ## Working Hypothesis
 
 The current abnormal dark-noise correlation may be caused by insufficient or unstable cooling in the acquisition computer.
