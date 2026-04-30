@@ -134,7 +134,7 @@ namespace Quantum_measurement_UI
 
             await Task.Run(() =>
             {
-                var files = Directory.GetFiles(targetFolder, "*.json", SearchOption.AllDirectories);
+                var files = Directory.GetFiles(targetFolder, "metadata.json", SearchOption.AllDirectories);
 
                 Parallel.ForEach(files, (file) =>
                 {
@@ -143,7 +143,7 @@ namespace Quantum_measurement_UI
                         var jsonBytes = File.ReadAllBytes(file);
                         var data = JsonSerializer.Deserialize<ExperimentRecord>(jsonBytes, options);
 
-                        if (data != null)
+                        if (data != null && IsExperimentMetadataRecord(data))
                         {
                             data.FullPath = file;
                             string folderName = new DirectoryInfo(Path.GetDirectoryName(file)).Name;
@@ -198,6 +198,13 @@ namespace Quantum_measurement_UI
 
             _allExperiments = tempCollection.OrderByDescending(x => x.SortableDate).ToList();
             HistoryGrid.ItemsSource = _allExperiments;
+        }
+
+        private static bool IsExperimentMetadataRecord(ExperimentRecord record)
+        {
+            return !string.IsNullOrWhiteSpace(record.TimestampString)
+                && record.Configuration != null
+                && record.PhysicsData != null;
         }
         // ---------------------------------------------------------
         // COPY THIS INTO UI_and_Logging.cs

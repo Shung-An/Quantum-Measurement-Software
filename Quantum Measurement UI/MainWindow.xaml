@@ -213,6 +213,9 @@
                                 Margin="0,10,0,5" Click="StartButton_Click"/>
                                     <Button Name="TerminateButton" Content="Terminate" Width="120" HorizontalAlignment="Center"
                                 Margin="0,5,0,10" Click="TerminateButton_Click"/>
+                                    <Button Name="ResendDelayStageProgramButton" Content="Resend ESP Program" Width="150" HorizontalAlignment="Center"
+                                Margin="0,0,0,10" Click="ResendDelayStageProgramButton_Click"
+                                ToolTip="Sends the selected delay-stage program command again without restarting acquisition."/>
                                     <CheckBox x:Name="EnableFFTCheckBox" Content="Enable FFT" IsChecked="False"
                                   Margin="8,0,0,0"
                                   Checked="EnableFFTCheckBox_Checked"
@@ -325,7 +328,7 @@
                                     <StackPanel Orientation="Horizontal" Margin="5">
                                         <TextBlock Text="Attenuator:" Width="70" VerticalAlignment="Center"/>
                                         <CheckBox Name="PowerDetectorAttenuatorAppliedCheckBox"
-                                                  Content="2 x 10 dB on power detector"
+                                                  Content="2 x 10 dB on Gage signal"
                                                   IsChecked="False"
                                                   VerticalAlignment="Center"/>
                                     </StackPanel>
@@ -683,6 +686,11 @@
                 Content="Run Program 1"
                 Width="150" Height="30" Margin="5"
                 Click="RunStoredProgram1Button_Click"/>
+                                <Button x:Name="ResendDelayStageProgramButtonEspPage"
+                Content="Resend Selected Program"
+                Width="180" Height="30" Margin="5"
+                Click="ResendDelayStageProgramButton_Click"
+                ToolTip="Sends the selected delay-stage program command again without restarting acquisition."/>
                             </StackPanel>
 
                             <!-- Time counter row in a border -->
@@ -719,7 +727,13 @@
                             </StackPanel>
 
                             <!-- DAQ Chart and Channel Toggles -->
-                            <lvc:CartesianChart x:Name="DAQChart" Height="400" LegendLocation="Right" Margin="10"/>
+                            <TextBlock x:Name="DaqRefreshStatusText"
+                                       Text="Display refresh: stopped"
+                                       FontWeight="SemiBold"
+                                       Margin="14,0,10,0"/>
+                            <oxy:PlotView x:Name="DAQPlotView"
+                                          Height="400"
+                                          Margin="10"/>
 
                             <WrapPanel Orientation="Horizontal" Margin="10,0,10,10">
                                 <CheckBox Content="AI0" IsChecked="True" Checked="ChannelToggle_Checked" Unchecked="ChannelToggle_Unchecked" Tag="0" Margin="5"/>
@@ -730,8 +744,13 @@
                                 <CheckBox Content="AI5" IsChecked="True" Checked="ChannelToggle_Checked" Unchecked="ChannelToggle_Unchecked" Tag="5" Margin="5"/>
                             </WrapPanel>
 
-                            <!-- AI5 Monitor -->
-                            <lvc:CartesianChart x:Name="AI5TimeSeriesChart" Height="400" Margin="10" LegendLocation="Right" />
+                            <!-- AI monitor -->
+                            <TextBlock Text="Rolling mean voltage, refreshed every 0.1 s"
+                                       FontWeight="SemiBold"
+                                       Margin="14,4,10,0"/>
+                            <oxy:PlotView x:Name="AITimeSeriesPlotView"
+                                          Height="400"
+                                          Margin="10"/>
 
                             <!-- Motor vs AI5 -->
                             <lvc:CartesianChart x:Name="MotorVsAI5Chart" Height="400" Margin="10">
@@ -843,7 +862,7 @@
 
                             <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="150"/>
 
-                            <DataGridTextColumn Header="Shot Noise (urad²/√Hz)" Binding="{Binding ShotNoiseResult, StringFormat=N2}" Width="150"/>
+                            <DataGridTextColumn Header="Shot Noise" Binding="{Binding ShotNoiseDisplay}" Width="150"/>
 
                             <DataGridTextColumn Header="Power (mW)" Binding="{Binding TotalPower, StringFormat=N2}" Width="80"/>
 

@@ -22,7 +22,10 @@ namespace Quantum_measurement_UI
     {
         #region Constants
 
-        private static readonly bool BypassUsbConnections = true;
+        private static readonly bool BypassUsbConnections = false;
+        private const int DaqUiRefreshIntervalMs = 100;
+        private const int DaqTimeSeriesVisiblePoints = 100;
+        private const int DaqSamplesPerChannelPerRead = 150;
 
         private volatile bool EnableFFT = false; // default off
 
@@ -186,6 +189,7 @@ namespace Quantum_measurement_UI
         private int daqUpdateCounter = 0;
         public ChartValues<ObservablePoint> MotorVsAI5Values { get; set; }
         private CancellationTokenSource? autoReadCts;
+        private CancellationTokenSource? signalReadCts;
         public class StatRow
         {
             public string Channel { get; set; }
@@ -270,10 +274,15 @@ namespace Quantum_measurement_UI
         public PlotModel? SignalPlotModel { get; set; }
         public PlotModel? HeatmapPlotModel { get; set; }
         public PlotModel? RmsPlotModel { get; set; }
+        public PlotModel? DaqFramePlotModel { get; set; }
+        public PlotModel? DaqMeanPlotModel { get; set; }
         private LineSeries? _signalSeriesA;
         private LineSeries? _signalSeriesB;
         private HeatMapSeries? _heatmapSeries;
         private LineSeries? _rmsSeries;
+        private OxyPlot.Series.LineSeries[] _daqFrameSeries = [];
+        private OxyPlot.Series.LineSeries[] _daqMeanSeries = [];
+        private bool[] _daqChannelVisible = Enumerable.Repeat(true, 6).ToArray();
 
         // For PixelChart to track the selected pixel value of cross-correlation matrix over time
         public SeriesCollection? PixelSeriesCollection { get; set; }
@@ -324,6 +333,7 @@ namespace Quantum_measurement_UI
         private CancellationTokenSource? delayStagePositionCancellationTokenSource;
         private StreamWriter delayStageLogWriter;
         private double delayStageCurrentPosition = 0.0; // Stores the current position of the delay stage
+        private string lastDelayStageProgramName = string.Empty;
 
         // For experiment log
         private string experimentLogDirectory;      // Stores the directory name for the experiment log
@@ -367,6 +377,7 @@ namespace Quantum_measurement_UI
 
         private long TotalIntegralFrames = 0;
         private long RejectedIntegralFrames = 0;
+        private Task? usbHardwareInitializationTask;
 
         #endregion
     }

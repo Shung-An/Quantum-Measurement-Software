@@ -210,6 +210,55 @@ namespace Quantum_measurement_UI
             }
         }
 
+        private async Task ResendDelayStageProgramCommandAsync()
+        {
+            await EnsureUsbHardwareInitializedAsync();
+
+            if (esp300Controller == null || !esp300Controller.IsConnected)
+            {
+                AppendMessage("ESP300 controller not connected.");
+                return;
+            }
+
+            string programName = string.Empty;
+            Dispatcher.Invoke(() =>
+            {
+                programName = DelayStageProgram.Text?.Trim() ?? string.Empty;
+            });
+
+            if (string.IsNullOrWhiteSpace(programName))
+            {
+                programName = lastDelayStageProgramName;
+            }
+
+            if (string.IsNullOrWhiteSpace(programName))
+            {
+                AppendMessage("No delay stage program is selected to resend.");
+                return;
+            }
+
+            bool sent = false;
+            string result = string.Empty;
+            await Task.Run(() => sent = esp300Controller.TryExecuteProgram(programName, out result));
+
+            if (sent)
+            {
+                lastDelayStageProgramName = programName;
+                AppendMessage($"Resent delay stage program command: {programName}");
+                LogExperimentEvent($"Resent delay stage program command: {programName}");
+            }
+            else
+            {
+                AppendMessage(result);
+                LogExperimentEvent(result);
+            }
+        }
+
+        private async void ResendDelayStageProgramButton_Click(object sender, RoutedEventArgs e)
+        {
+            await ResendDelayStageProgramCommandAsync();
+        }
+
         private bool TryGetRobustESPPosition(out double position)
         {
             double readPosition = esp300Controller.GetCurrentPosition();
@@ -262,6 +311,8 @@ namespace Quantum_measurement_UI
         // --- Main Function ---
         private async Task startDelayStageProgram()
         {
+            await EnsureUsbHardwareInitializedAsync();
+
             if (esp300Controller == null || !esp300Controller.IsConnected)
             {
                 AppendMessage("ESP300 controller not connected.");
@@ -345,8 +396,16 @@ namespace Quantum_measurement_UI
                 // ---------------------------------------------------------
 
                 // 3. Start the Stored Program
-                esp300Controller.ClearAllErrors();
-                esp300Controller.ExecuteProgram(programName);
+                bool programStarted = false;
+                string programStartResult = string.Empty;
+                await Task.Run(() => programStarted = esp300Controller.TryExecuteProgram(programName, out programStartResult));
+                if (!programStarted)
+                {
+                    AppendMessage(programStartResult);
+                    return;
+                }
+
+                lastDelayStageProgramName = programName;
                 AppendMessage($"Started delay stage program: {programName}");
 
                 // 4. Setup Logging

@@ -516,58 +516,72 @@ namespace Quantum_measurement_UI
             DAQChannel4Values = new ChartValues<double>();
             DAQChannel5Values = new ChartValues<double>();
 
-            // Set up DAQChart with 6 series
-            DAQChart.Series = new SeriesCollection
-{
-    new LineSeries
-    {
-        Title = "Channel 0",
-        Values = DAQChannel0Values,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-    new LineSeries
-    {
-        Title = "Channel 1",
-        Values = DAQChannel1Values,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-    new LineSeries
-    {
-        Title = "Channel 2",
-        Values = DAQChannel2Values,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-    new LineSeries
-    {
-        Title = "Channel 3",
-        Values = DAQChannel3Values,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-    new LineSeries
-    {
-        Title = "Channel 4",
-        Values = DAQChannel4Values,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-    new LineSeries
-    {
-        Title = "Channel 5",
-        Values = DAQChannel5Values,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    }
-};
+            OxyColor[] daqColors =
+            {
+                OxyColors.SteelBlue,
+                OxyColors.IndianRed,
+                OxyColors.SeaGreen,
+                OxyColors.DarkOrange,
+                OxyColors.MediumPurple,
+                OxyColors.Teal
+            };
+
+            _daqFrameSeries = new OxyLineSeries[6];
+            _daqMeanSeries = new OxyLineSeries[6];
+
+            DaqFramePlotModel = new OxyPlotModel
+            {
+                Title = "Latest NI DAQ Frame",
+                IsLegendVisible = true,
+                PlotMargins = new OxyThickness(45, 10, 10, 35)
+            };
+            DaqFramePlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Sample bin in latest DAQ frame"
+            }));
+            DaqFramePlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Voltage (V)"
+            }));
+
+            DaqMeanPlotModel = new OxyPlotModel
+            {
+                Title = "Rolling Mean Voltage",
+                IsLegendVisible = true,
+                PlotMargins = new OxyThickness(45, 10, 10, 35)
+            };
+            DaqMeanPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Bottom,
+                Title = "Time (s)"
+            }));
+            DaqMeanPlotModel.Axes.Add(CreateLockedLinearAxis(new OxyLinearAxis
+            {
+                Position = OxyAxisPosition.Left,
+                Title = "Mean voltage per 100 ms frame (V)"
+            }));
+
+            for (int ch = 0; ch < 6; ch++)
+            {
+                _daqFrameSeries[ch] = new OxyLineSeries
+                {
+                    Title = $"AI{ch}",
+                    Color = daqColors[ch],
+                    StrokeThickness = 1.5
+                };
+                _daqMeanSeries[ch] = new OxyLineSeries
+                {
+                    Title = $"AI{ch}",
+                    Color = daqColors[ch],
+                    StrokeThickness = 1.5
+                };
+                DaqFramePlotModel.Series.Add(_daqFrameSeries[ch]);
+                DaqMeanPlotModel.Series.Add(_daqMeanSeries[ch]);
+            }
+
+            DAQPlotView.Model = DaqFramePlotModel;
 
 
 
@@ -593,57 +607,7 @@ namespace Quantum_measurement_UI
             AI0TimeSeriesValues = new ChartValues<ObservablePoint>();
             AI5HistogramValues = new ChartValues<double>();
 
-            AI5TimeSeriesChart.Series = new SeriesCollection
-{
-    new LineSeries
-    {
-        Title = "AI0 Voltage",
-        Values = AI0TimeSeriesValues,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-                new LineSeries
-    {
-        Title = "AI1 Voltage",
-        Values = AI1TimeSeriesValues,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-                new LineSeries
-    {
-        Title = "AI2 Voltage",
-        Values = AI2TimeSeriesValues,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-                new LineSeries
-    {
-        Title = "AI3 Voltage",
-        Values = AI3TimeSeriesValues,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-                new LineSeries
-    {
-        Title = "AI4 Voltage",
-        Values = AI4TimeSeriesValues,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    },
-                new LineSeries
-    {
-        Title = "AI5 Voltage",
-        Values = AI5TimeSeriesValues,
-        PointGeometry = null,
-        StrokeThickness = 2,
-        Fill = Brushes.Transparent
-    }
-};
+            AITimeSeriesPlotView.Model = DaqMeanPlotModel;
         }
 
         #endregion

@@ -171,12 +171,12 @@ namespace Quantum_measurement_UI
                 // === Step 1: Average voltages for each detector ===
                 double Vdet1 = (DAQChannel1Values[^1] + DAQChannel2Values[^1]) / 2.0;
                 double Vdet2 = (DAQChannel3Values[^1] + DAQChannel4Values[^1]) / 2.0;
-                bool attenuatorApplied = PowerDetectorAttenuatorAppliedCheckBox.IsChecked == true;
-                double powerCorrectionFactor = attenuatorApplied ? PowerDetectorAttenuatorCorrectionFactor : 1.0;
+                bool gageSignalAttenuatorApplied = PowerDetectorAttenuatorAppliedCheckBox.IsChecked == true;
+                double gageSignalCorrectionFactor = GetGageSignalCorrectionFactor();
 
                 // === Step 2: Convert to optical power (W) ===
-                double P1 = Vdet1 * VtoW * powerCorrectionFactor;
-                double P2 = Vdet2 * VtoW * powerCorrectionFactor;
+                double P1 = Vdet1 * VtoW;
+                double P2 = Vdet2 * VtoW;
 
                 // === Step 3: Photon number per pulse ===
                 double N1 = P1 / (photonEnergy_J * repRate);
@@ -216,7 +216,7 @@ namespace Quantum_measurement_UI
 
                 // === Optional debug logs ===
 
-                LogExperimentEvent($"Power detector attenuator applied = {attenuatorApplied}, total = {(attenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, factor = {powerCorrectionFactor:F1}");
+                LogExperimentEvent($"Gage signal attenuator applied = {gageSignalAttenuatorApplied}, total = {(gageSignalAttenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, V^2 factor = {gageSignalCorrectionFactor:F1}");
                 LogExperimentEvent($"Vdet1 = {Vdet1:F3} V, P1 = {P1 * 1e3:F2} mW, N1 = {N1:E2}");
                 LogExperimentEvent($"Vdet2 = {Vdet2:F3} V, P2 = {P2 * 1e3:F2} mW, N2 = {N2:E2}");
                 LogExperimentEvent($"Sensitivity = {sensitivity:E2} V/photon");
@@ -225,7 +225,7 @@ namespace Quantum_measurement_UI
                 LogExperimentEvent($"Conversion Factor = {conversionFactor_V2_per_rad2:E2} V²/rad²");
                 LogExperimentEvent($"Shot Noise Result = {noise_μrad2_sqrtHz:F2} μrad²/√Hz");
 
-                LogSensitivity($"Power Detector Attenuator Applied = {attenuatorApplied}, Total = {(attenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, Correction Factor = {powerCorrectionFactor:F1}");
+                LogSensitivity($"Gage Signal Attenuator Applied = {gageSignalAttenuatorApplied}, Total = {(gageSignalAttenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, V^2 Correction Factor = {gageSignalCorrectionFactor:F1}");
                 LogSensitivity($"Vdet1 = {Vdet1:F3} V, P1 = {P1 * 1e3:F2} mW, N1 = {N1:E2}");
                 LogSensitivity($"Vdet2 = {Vdet2:F3} V, P2 = {P2 * 1e3:F2} mW, N2 = {N2:E2}");
                 LogSensitivity($"Sensitivity = {sensitivity:E2} V/photon");
@@ -245,6 +245,18 @@ namespace Quantum_measurement_UI
                 CurrentSensitivityTextBlock.Text = "Shot Noise: Error";
                 AppendMessage($"[Corrected Shot Noise Calc Error] {ex.Message}");
             }
+        }
+
+        private double GetGageSignalCorrectionFactor()
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                return Dispatcher.Invoke(GetGageSignalCorrectionFactor);
+            }
+
+            return PowerDetectorAttenuatorAppliedCheckBox.IsChecked == true
+                ? PowerDetectorAttenuatorCorrectionFactor
+                : 1.0;
         }
 
 
@@ -332,8 +344,13 @@ namespace Quantum_measurement_UI
         /// <returns></returns>
         private async Task ReadSignal() 
         {
-            autoReadCts = new CancellationTokenSource();
-            var token = autoReadCts.Token;
+            if (signalReadCts != null)
+            {
+                return;
+            }
+
+            signalReadCts = new CancellationTokenSource();
+            var token = signalReadCts.Token;
 
             Motor3_Balancer bal3 = new Motor3_Balancer(motorController);
             List<DateTime[]> SignalDrops = []; // Record of the Start Time and End Time of a Signal Drop
@@ -348,14 +365,14 @@ namespace Quantum_measurement_UI
                     var localPipe = daqPipe;
                     if (localPipe != null && localPipe.IsConnected)
                     {
-                        string response = await localPipe.SendCommandAsync("ReadAI");
-                             
-                        string[] tokens = response.Split(',');
-                        for (int i = 0; i < tokens.Length && i < daqBuffer.Length; i++)
+                        string response = await localPipe.SendCommandAsync($"ReadAI {DaqSamplesPerChannelPerRead}");
+                        if (!TryUpdateDaqBufferFromResponse(response, out string status))
                         {
-                            if (double.TryParse(tokens[i], out double value))
-                                daqBuffer[i] = value;
+                            Dispatcher.Invoke(() => DaqRefreshStatusText.Text = status);
+                            await Task.Delay(100, token);
+                            continue;
                         }
+
                         // Find the mean of channel 0 from the values in the Daq Buffer
                         double mean = GetSignalMean(0);
                         CheckForDrops(SignalDrops, mean);
@@ -393,6 +410,9 @@ namespace Quantum_measurement_UI
 
                 await Task.Delay(100, token); // Delay for 100 milliseconds 
             }
+
+            signalReadCts?.Dispose();
+            signalReadCts = null;
         }
 
         private void ProcessReceivedCorrelationMatrixFrame()
@@ -420,7 +440,6 @@ namespace Quantum_measurement_UI
                 _acceptedFrameRateFps = _backendFrameRateFps;
                 Array.Copy(reduced49, _latestReduced49Frame, reduced49.Length);
                 Array.Copy(reduced49, current49ChannelValues, reduced49.Length);
-                UpdateSelectedPositionCumulativeHistories(reduced49);
 
                 for (int i = 0; i < reduced49.Length; i++)
                 {
@@ -657,12 +676,14 @@ namespace Quantum_measurement_UI
             long totalFramesReceived;
             long totalFramesSkipped;
             double[] cumulativeSnapshot = new double[49];
+            double[] latestReducedSnapshot = new double[49];
 
             lock (_acceptedLock)
             {
                 totalFramesReceived = TotalFramesReceived;
                 totalFramesSkipped = TotalFramesSkipped;
                 Array.Copy(Cumulative49Channels, cumulativeSnapshot, cumulativeSnapshot.Length);
+                Array.Copy(_latestReduced49Frame, latestReducedSnapshot, latestReducedSnapshot.Length);
             }
 
             long validFrames = totalFramesReceived;
@@ -675,12 +696,14 @@ namespace Quantum_measurement_UI
             for (int i = 0; i < 49; i++)
             {
                 double avgV2 = cumulativeSnapshot[i] / validFrames;
-                double physValue = (avgV2 / conversionFactor_V2_per_rad2) * 1e12;
+                double correctedAvgV2 = avgV2 * GetGageSignalCorrectionFactor();
+                double physValue = (correctedAvgV2 / conversionFactor_V2_per_rad2) * 1e12;
 
                 MatrixTableData[i].Value = avgV2;
                 MatrixTableData[i].PhysicalValue = physValue;
             }
 
+            UpdateSelectedPositionCumulativeHistories(latestReducedSnapshot);
             UpdateSelectedAccumulationSummary();
             UpdateSelectedPositionAveragePlot();
             UpdateSkipStatsUI(totalFramesReceived, totalFramesSkipped);
@@ -757,7 +780,8 @@ namespace Quantum_measurement_UI
                     item.CurrentPositionCumulativeHistory.Clear();
                 }
 
-                double physicalSample = (reduced49[i] / conversionFactor_V2_per_rad2) * 1e12;
+                double correctedSampleV2 = reduced49[i] * GetGageSignalCorrectionFactor();
+                double physicalSample = (correctedSampleV2 / conversionFactor_V2_per_rad2) * 1e12;
                 item.CurrentPositionAcceptedCount++;
                 item.CurrentPositionRunningAverage +=
                     (physicalSample - item.CurrentPositionRunningAverage) / item.CurrentPositionAcceptedCount;

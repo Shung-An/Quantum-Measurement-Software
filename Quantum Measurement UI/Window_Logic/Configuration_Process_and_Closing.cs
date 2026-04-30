@@ -7,6 +7,7 @@ using System.IO;
 using System.Windows.Threading;
 using System.Diagnostics;
 using System.Windows.Controls;
+using System.Globalization;
 using QuantumSqueezingUI;
 using Windows.ApplicationModel.Activation;
 
@@ -469,6 +470,11 @@ namespace Quantum_measurement_UI
 
         private void StartMotorVsAI5Update()
         {
+            if (motorVsAI5Cts != null)
+            {
+                return;
+            }
+
             motorVsAI5Cts = new CancellationTokenSource();
             var token = motorVsAI5Cts.Token;
 
@@ -482,7 +488,7 @@ namespace Quantum_measurement_UI
                         {
                             UpdateMotorVsAI5(); // Update motor curve every 100 ms
                         });
-                        await Task.Delay(100, token); // 100ms = 10Hz
+                        await Task.Delay(DaqUiRefreshIntervalMs, token);
                     }
                     catch (TaskCanceledException)
                     {
@@ -524,10 +530,11 @@ namespace Quantum_measurement_UI
                 if (channel > 5) channel = 0;
             }
 
-            // Step 2: Check if 100ms has passed
+            // Step 2: update the rolling monitor at the DAQ UI frame rate.
             double timeDelta = (DateTime.Now - lastAiUpdateTime).TotalMilliseconds;
-            if (timeDelta >= 100 && WaitTicks <= 0)
+            if (timeDelta >= DaqUiRefreshIntervalMs && WaitTicks <= 0)
             {
+                double[] channelMeans = new double[6];
                 if (!first) // do not record the time of the first data point, will be affected by delay of the system
                 {
                     timeElapsed += timeDelta;
@@ -549,6 +556,7 @@ namespace Quantum_measurement_UI
                         mean += buffers[localChannel, j];
                     }
                     mean /= samplesPerChannel;
+                    channelMeans[localChannel] = mean;
 
                     if (i == 0 && window.Dropped(mean)) // if the mean of channel 0 is below that 
                     {
@@ -564,14 +572,78 @@ namespace Quantum_measurement_UI
                     aiWindowData[localChannel].Add(mean);
                     UpdateAITimeSeriesChart(localChannel);
 
-                    // Keep buffer only 1000 points (about 100 seconds history)
-                    if (aiWindowData[localChannel].Count > 300)
+                    if (aiWindowData[localChannel].Count > DaqTimeSeriesVisiblePoints)
                         aiWindowData[localChannel].RemoveAt(0);
                 }
 
+                UpdatePowerDifferenceReadouts(channelMeans);
+                DaqRefreshStatusText.Text = $"Display refresh: {timeDelta:F0} ms | Samples/frame: {samplesPerChannel}";
+                DaqMeanPlotModel?.InvalidatePlot(true);
                 lastAiUpdateTime = DateTime.Now;
             }
-            else if (timeDelta >= 100) WaitTicks--;
+            else if (timeDelta >= DaqUiRefreshIntervalMs) WaitTicks--;
+        }
+
+        private bool TryUpdateDaqBufferFromResponse(string response, out string status)
+        {
+            status = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                status = "DAQ connected; waiting for samples...";
+                return false;
+            }
+
+            response = response.Replace("\\r", string.Empty)
+                               .Replace("\\n", string.Empty)
+                               .Trim();
+            if (response.StartsWith("Error:", StringComparison.OrdinalIgnoreCase))
+            {
+                status = response;
+                return false;
+            }
+
+            string[] tokens = response.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            int usableLength = Math.Min(tokens.Length, daqBuffer.Length);
+            usableLength -= usableLength % 6;
+
+            if (usableLength <= 0)
+            {
+                status = $"DAQ returned an incomplete frame ({tokens.Length} values).";
+                return false;
+            }
+
+            Array.Clear(daqBuffer, 0, daqBuffer.Length);
+            for (int i = 0; i < usableLength; i++)
+            {
+                if (!double.TryParse(tokens[i], NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out double value))
+                {
+                    status = $"DAQ returned a non-numeric value at index {i}: {tokens[i]}";
+                    return false;
+                }
+
+                daqBuffer[i] = value;
+            }
+
+            if (usableLength < daqBuffer.Length)
+            {
+                status = $"DAQ returned a short frame ({usableLength / 6} samples/channel).";
+            }
+
+            return true;
+        }
+
+        private void UpdatePowerDifferenceReadouts(double[] channelMeans)
+        {
+            if (channelMeans.Length < 5)
+            {
+                return;
+            }
+
+            double diffCh1 = channelMeans[1] - channelMeans[2];
+            double diffCh2 = channelMeans[3] - channelMeans[4];
+            PowerDiffCh1.Text = diffCh1.ToString("F4", CultureInfo.InvariantCulture);
+            PowerDiffCh2.Text = diffCh2.ToString("F4", CultureInfo.InvariantCulture);
         }
 
         private void ReleaseDAQPipeButton_Click(object sender, RoutedEventArgs e) // Wrapper Method to interact with the button
@@ -618,8 +690,13 @@ namespace Quantum_measurement_UI
         /// <param name="channel"></param>
         private void UpdateAITimeSeriesChart(int channel) 
         {
-            // Call one of the Series Values to be edited via the line variable
-            ChartValues<ObservablePoint>? line = channel switch 
+            if (channel < 0 || channel >= _daqMeanSeries.Length)
+            {
+                return;
+            }
+
+            OxyPlot.Series.LineSeries line = _daqMeanSeries[channel];
+            ChartValues<ObservablePoint>? legacyLine = channel switch
             {
                 0 => AI0TimeSeriesValues,
                 1 => AI1TimeSeriesValues,
@@ -630,16 +707,21 @@ namespace Quantum_measurement_UI
                 _ => null
             };
 
-            if (line == null) return;
-
-            if (line?.Count > 40) line.RemoveAt(0); // Beyond 60 points, program starts running really slowly trying to render everything
-
             double dt = 0.001; // Convert each point to seconds
+            double timeSeconds = timeElapsed * dt;
+            double value = aiWindowData[channel][^1];
 
-            
-            line?.Add(new ObservablePoint( // Add an observable point for the last updated value in the Window Data
-                timeElapsed * dt,
-                aiWindowData[channel][^1]));          
+            line.Points.Add(new OxyPlot.DataPoint(timeSeconds, value));
+            if (line.Points.Count > DaqTimeSeriesVisiblePoints)
+            {
+                line.Points.RemoveAt(0);
+            }
+
+            legacyLine?.Add(new ObservablePoint(timeSeconds, value));
+            if (legacyLine != null && legacyLine.Count > DaqTimeSeriesVisiblePoints)
+            {
+                legacyLine.RemoveAt(0);
+            }
         }
 
 
@@ -871,10 +953,45 @@ namespace Quantum_measurement_UI
         /// </summary>
         private async Task StartAutoRead()
         {
+            if (autoReadCts != null)
+            {
+                AppendMessage("DAQ live read is already running.");
+                return;
+            }
+
             autoReadCts = new CancellationTokenSource();
             var token = autoReadCts.Token;
 
-            int motorVsAi5Counter = 0; // Counter for slower MotorVsAI5 update
+            int motorVsAi5Counter = 0;
+            int motorVsAi5UpdateEveryFrames = Math.Max(1, 1000 / DaqUiRefreshIntervalMs);
+            lastAiUpdateTime = DateTime.Now;
+            timeElapsed = 0;
+            first = true;
+            WaitTicks = 0;
+            aiTimeTracker.Clear();
+            DAQChannel0Values.Clear();
+            DAQChannel1Values.Clear();
+            DAQChannel2Values.Clear();
+            DAQChannel3Values.Clear();
+            DAQChannel4Values.Clear();
+            DAQChannel5Values.Clear();
+            AI0TimeSeriesValues?.Clear();
+            AI1TimeSeriesValues?.Clear();
+            AI2TimeSeriesValues?.Clear();
+            AI3TimeSeriesValues?.Clear();
+            AI4TimeSeriesValues?.Clear();
+            AI5TimeSeriesValues?.Clear();
+            foreach (var series in _daqFrameSeries)
+            {
+                series.Points.Clear();
+            }
+            foreach (var series in _daqMeanSeries)
+            {
+                series.Points.Clear();
+            }
+            DaqFramePlotModel?.InvalidatePlot(true);
+            DaqMeanPlotModel?.InvalidatePlot(true);
+            DaqRefreshStatusText.Text = $"Display refresh target: {DaqUiRefreshIntervalMs} ms";
 
             for (int i = 0; i < aiWindowData.Length; i++) // initialize window
             {
@@ -913,7 +1030,7 @@ namespace Quantum_measurement_UI
                         });
 
                         motorVsAi5Counter++;
-                        if (motorVsAi5Counter >= 5)
+                        if (motorVsAi5Counter >= motorVsAi5UpdateEveryFrames)
                         {
                             Dispatcher.Invoke(() =>
                             {
@@ -934,13 +1051,12 @@ namespace Quantum_measurement_UI
                         var localPipe = daqPipe;
                         if (localPipe != null && localPipe.IsConnected)
                         {
-                            string response = await localPipe.SendCommandAsync("ReadAI");
-
-                            string[] tokens = response.Split(',');
-                            for (int i = 0; i < tokens.Length && i < daqBuffer.Length; i++)
+                            string response = await localPipe.SendCommandAsync($"ReadAI {DaqSamplesPerChannelPerRead}");
+                            if (!TryUpdateDaqBufferFromResponse(response, out string status))
                             {
-                                if (double.TryParse(tokens[i], out double value))
-                                    daqBuffer[i] = value;
+                                Dispatcher.Invoke(() => DaqRefreshStatusText.Text = status);
+                                await Task.Delay(DaqUiRefreshIntervalMs, token);
+                                continue;
                             }
 
                             Dispatcher.Invoke(() =>
@@ -965,7 +1081,7 @@ namespace Quantum_measurement_UI
                             });
 
                             motorVsAi5Counter++;
-                            if (motorVsAi5Counter >= 5) // 🔥 Every 5 * 200ms = 1 second
+                            if (motorVsAi5Counter >= motorVsAi5UpdateEveryFrames)
                             {
                                 Dispatcher.Invoke(() =>
                                 {
@@ -983,7 +1099,7 @@ namespace Quantum_measurement_UI
                         }
                     }
 
-                    await Task.Delay(200, token); // Regular fast cycle
+                    await Task.Delay(DaqUiRefreshIntervalMs, token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -1094,6 +1210,11 @@ namespace Quantum_measurement_UI
         /// </summary>
         private void UpdateDAQChart()
         {
+            if (_daqFrameSeries.Length < 6 || DaqFramePlotModel == null)
+            {
+                return;
+            }
+
             int samplesPerChannel = daqBuffer.Length / 6;
             int binSize = 10;  // Adjust if needed
             int binnedPoints = samplesPerChannel / binSize;
@@ -1119,6 +1240,11 @@ namespace Quantum_measurement_UI
                 }
             }
 
+            for (int ch = 0; ch < 6; ch++)
+            {
+                _daqFrameSeries[ch].Points.Clear();
+            }
+
             // Fill data for all 6 channels
             for (int i = 0; i < binnedPoints; i++)
             {
@@ -1131,9 +1257,14 @@ namespace Quantum_measurement_UI
                         if (idx < daqBuffer.Length)
                             sum += daqBuffer[idx];
                     }
-                    allChannels[ch][i] = sum / binSize;
+                    double mean = sum / binSize;
+                    allChannels[ch][i] = mean;
+                    _daqFrameSeries[ch].Points.Add(new OxyPlot.DataPoint(i, mean));
                 }
             }
+
+            DaqFramePlotModel.InvalidatePlot(true);
+
             daqUpdateCounter++;
             if (daqUpdateCounter >= 10)
             {
@@ -1146,12 +1277,13 @@ namespace Quantum_measurement_UI
         {
             if (sender is CheckBox checkbox && int.TryParse(checkbox.Tag?.ToString(), out int index))
             {
-                var series = DAQChart.Series[index] as LineSeries;
-                if (series != null)
+                if (index >= 0 && index < _daqChannelVisible.Length)
                 {
-                    series.StrokeThickness = 2;
-                    series.Fill = Brushes.Transparent;
-                    series.PointGeometry = null;
+                    _daqChannelVisible[index] = true;
+                    if (index < _daqFrameSeries.Length) _daqFrameSeries[index].IsVisible = true;
+                    if (index < _daqMeanSeries.Length) _daqMeanSeries[index].IsVisible = true;
+                    DaqFramePlotModel?.InvalidatePlot(false);
+                    DaqMeanPlotModel?.InvalidatePlot(false);
                 }
             }
         }
@@ -1160,12 +1292,13 @@ namespace Quantum_measurement_UI
         {
             if (sender is CheckBox checkbox && int.TryParse(checkbox.Tag?.ToString(), out int index))
             {
-                var series = DAQChart.Series[index] as LineSeries;
-                if (series != null)
+                if (index >= 0 && index < _daqChannelVisible.Length)
                 {
-                    series.StrokeThickness = 0;
-                    series.Fill = Brushes.Transparent;
-                    series.PointGeometry = null;
+                    _daqChannelVisible[index] = false;
+                    if (index < _daqFrameSeries.Length) _daqFrameSeries[index].IsVisible = false;
+                    if (index < _daqMeanSeries.Length) _daqMeanSeries[index].IsVisible = false;
+                    DaqFramePlotModel?.InvalidatePlot(false);
+                    DaqMeanPlotModel?.InvalidatePlot(false);
                 }
             }
         }
@@ -1220,16 +1353,22 @@ namespace Quantum_measurement_UI
                 autoReadCts.Cancel();
                 autoReadCts.Dispose();
                 autoReadCts = null;
+                DaqRefreshStatusText.Text = "Display refresh: stopped";
             }
         }
 
 
-        private void StartDAQButton_Click(object sender, RoutedEventArgs e)
+        private async void StartDAQButton_Click(object sender, RoutedEventArgs e)
         {
             if (!BypassUsbConnections && (daqPipe == null || !daqPipe.IsConnected))
             {
-                AppendMessage("DAQ Service not connected.");
-                return;
+                AppendMessage("DAQ Service not connected. Connecting now...");
+                bool connected = await Connection();
+                if (!connected && (daqPipe == null || !daqPipe.IsConnected))
+                {
+                    DaqRefreshStatusText.Text = "DAQ connection failed.";
+                    return;
+                }
             }
 
             _ = StartAutoRead(); // 🔥 Start background auto-reading

@@ -25,14 +25,14 @@ namespace Quantum_measurement_UI
             InitializeComponent();          // Initialize the UI components
 
 
-            motorController = new MotorController(BypassUsbConnections);         // Initialize MotorController instance
+            motorController = new MotorController(
+                BypassUsbConnections,
+                deferUsbInitialization: !BypassUsbConnections);         // Initialize MotorController instance
             DataContext = this;
             esp300Controller = new ESP300Controller
             {
                 Axis = 1                  // Axis number
             };
-
-            esp300Controller.Connect(bypassUsbConnection: BypassUsbConnections);         // Connect to the ESP300 controller
 
             // Initialize charts
             InitializeSignalChart();         // Initialize the signal chart data                                          
@@ -69,9 +69,72 @@ namespace Quantum_measurement_UI
                 Interval = TimeSpan.FromSeconds(1)
             };
             elapsedTimer.Tick += UpdateElapsedTime;
+
+            Loaded += (_, _) => _ = StartUsbHardwareInitializationAsync();
         }
 
         #endregion
+
+        private Task StartUsbHardwareInitializationAsync()
+        {
+            if (usbHardwareInitializationTask != null)
+            {
+                return usbHardwareInitializationTask;
+            }
+
+            usbHardwareInitializationTask = InitializeUsbHardwareAsync();
+            return usbHardwareInitializationTask;
+        }
+
+        private async Task EnsureUsbHardwareInitializedAsync()
+        {
+            if (BypassUsbConnections)
+            {
+                return;
+            }
+
+            await StartUsbHardwareInitializationAsync();
+        }
+
+        private async Task InitializeUsbHardwareAsync()
+        {
+            if (BypassUsbConnections)
+            {
+                esp300Controller.Connect(bypassUsbConnection: true);
+                return;
+            }
+
+            AppendMessage("USB hardware initialization started in background.");
+            var totalStopwatch = Stopwatch.StartNew();
+
+            Task motorTask = Task.Run(() =>
+            {
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    motorController.InitializeDevice();
+                    Dispatcher.Invoke(() => AppendMessage($"Newport controller connected in {sw.Elapsed.TotalSeconds:F1}s."));
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => AppendMessage($"Newport controller connection failed after {sw.Elapsed.TotalSeconds:F1}s: {ex.Message}"));
+                }
+            });
+
+            Task espTask = Task.Run(() =>
+            {
+                var sw = Stopwatch.StartNew();
+                bool connected = esp300Controller.Connect(bypassUsbConnection: false);
+                Dispatcher.Invoke(() =>
+                {
+                    string status = connected ? "connected" : "not connected";
+                    AppendMessage($"ESP300 {status} in {sw.Elapsed.TotalSeconds:F1}s.");
+                });
+            });
+
+            await Task.WhenAll(motorTask, espTask);
+            AppendMessage($"USB hardware initialization finished in {totalStopwatch.Elapsed.TotalSeconds:F1}s.");
+        }
 
         private void TextBox_TextChanged(object sender, TextChangedEventArgs e)
         {

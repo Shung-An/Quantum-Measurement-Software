@@ -9,8 +9,9 @@ namespace Quantum_measurement_UI
         private readonly Dictionary<int, int> simulatedPositions = new Dictionary<int, int>();
         public string deviceKey;  // Unique key identifying the motor controller device
         public bool IsBypassed { get; }
+        public bool IsConnected => IsBypassed || cmdLib != null;
 
-        public MotorController(bool bypassUsbConnection = false)
+        public MotorController(bool bypassUsbConnection = false, bool deferUsbInitialization = false)
         {
             IsBypassed = bypassUsbConnection;
             deviceKey = string.Empty;
@@ -22,12 +23,23 @@ namespace Quantum_measurement_UI
                 return;
             }
 
+            if (deferUsbInitialization)
+            {
+                Console.WriteLine("Motor controller USB initialization deferred.");
+                return;
+            }
+
             InitializeDevice();
         }
 
         // Initialize the motor controller device
-        private void InitializeDevice()
+        public void InitializeDevice()
         {
+            if (IsBypassed || cmdLib != null)
+            {
+                return;
+            }
+
             Console.WriteLine("Waiting for device discovery...");
             deviceKey = string.Empty;
             cmdLib = new CmdLib8742(false, 5000, ref deviceKey);
@@ -41,6 +53,22 @@ namespace Quantum_measurement_UI
             Console.WriteLine($"First Device Key = {deviceKey}");
         }
 
+        private bool EnsureConnected()
+        {
+            if (IsBypassed)
+            {
+                return true;
+            }
+
+            if (cmdLib != null)
+            {
+                return true;
+            }
+
+            Console.WriteLine("Motor controller is not connected yet.");
+            return false;
+        }
+
         // Set the current position of the specified motor to zero
         public bool SetZeroPosition(int motorNumber)
         {
@@ -49,6 +77,8 @@ namespace Quantum_measurement_UI
                 simulatedPositions[motorNumber] = 0;
                 return true;
             }
+
+            if (!EnsureConnected()) return false;
 
             bool status = cmdLib!.SetZeroPosition(deviceKey, motorNumber);
             if (!status)
@@ -68,6 +98,8 @@ namespace Quantum_measurement_UI
                 return true;
             }
 
+            if (!EnsureConnected()) return false;
+
             bool status = cmdLib!.GetPosition(deviceKey, motorNumber, ref position);
             if (!status)
             {
@@ -82,6 +114,8 @@ namespace Quantum_measurement_UI
             {
                 return true;
             }
+
+            if (!EnsureConnected()) return false;
 
             bool status = cmdLib!.AbortMotion(deviceKey);
             if (!status)
@@ -101,6 +135,8 @@ namespace Quantum_measurement_UI
                 return true;
             }
 
+            if (!EnsureConnected()) return false;
+
             bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, relativeSteps);
             if (!status)
             {
@@ -117,6 +153,8 @@ namespace Quantum_measurement_UI
                 return MoveRelative(motorNumber, 10);
             }
 
+            if (!EnsureConnected()) return false;
+
             bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, 10);
             if (!status)
             {
@@ -131,6 +169,8 @@ namespace Quantum_measurement_UI
             {
                 return MoveRelative(motorNumber, -10);
             }
+
+            if (!EnsureConnected()) return false;
 
             bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, -10);
             if (!status)
@@ -147,6 +187,8 @@ namespace Quantum_measurement_UI
                 return MoveRelative(motorNumber, 1);
             }
 
+            if (!EnsureConnected()) return false;
+
             bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, 1);
             if (!status)
             {
@@ -161,6 +203,8 @@ namespace Quantum_measurement_UI
             {
                 return MoveRelative(motorNumber, -1);
             }
+
+            if (!EnsureConnected()) return false;
 
             bool status = cmdLib!.RelativeMove(deviceKey, motorNumber, -1);
             if (!status)
@@ -179,6 +223,8 @@ namespace Quantum_measurement_UI
                 return true;
             }
 
+            if (!EnsureConnected()) return false;
+
             bool status = cmdLib!.AbsoluteMove(deviceKey, motorNumber, targetPosition);
             if (!status)
             {
@@ -195,6 +241,8 @@ namespace Quantum_measurement_UI
             {
                 return true;
             }
+
+            if (!EnsureConnected()) return false;
 
             bool status = cmdLib!.GetMotionDone(deviceKey, motorNumber, ref isMotionDone);
             if (!status)
@@ -219,6 +267,8 @@ namespace Quantum_measurement_UI
             {
                 return;
             }
+
+            if (!EnsureConnected()) return;
 
             string errorMsg = string.Empty;
             bool status = cmdLib!.GetErrorMsg(deviceKey, ref errorMsg);

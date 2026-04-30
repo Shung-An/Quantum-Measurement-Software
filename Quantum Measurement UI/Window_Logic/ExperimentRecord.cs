@@ -32,6 +32,21 @@ namespace Quantum_measurement_UI
         public double ShotNoiseResult => PhysicsData?.ShotNoiseResult_urad2_rtHz ?? 0;
 
         [JsonIgnore]
+        public string ShotNoiseDisplay
+        {
+            get
+            {
+                if (PhysicsData == null) return "-";
+                if (PhysicsData.IsDarkNoiseRun || string.Equals(PhysicsData.DisplayAmplitudeUnit, "V^2", StringComparison.OrdinalIgnoreCase))
+                {
+                    return $"{PhysicsData.ShotNoiseResult_V2_rtHz:N2} V^2/rtHz";
+                }
+
+                return $"{PhysicsData.ShotNoiseResult_urad2_rtHz:N2} urad^2/rtHz";
+            }
+        }
+
+        [JsonIgnore]
         public double TotalPower => (PhysicsData?.Power_mW_1 ?? 0) + (PhysicsData?.Power_mW_2 ?? 0);
 
         [JsonIgnore]
@@ -80,6 +95,7 @@ namespace Quantum_measurement_UI
         [JsonPropertyName("Power_mW_2")] public double Power_mW_2 { get; set; }
         [JsonPropertyName("Sensitivity_V_photon")] public double Sensitivity_V_photon { get; set; }
         [JsonPropertyName("ShotNoiseResult_urad2_rtHz")] public double ShotNoiseResult_urad2_rtHz { get; set; }
+        [JsonPropertyName("ShotNoiseResult_V2_rtHz")] public double ShotNoiseResult_V2_rtHz { get; set; }
         [JsonPropertyName("ScanRange_mm")] public double ScanRange_mm { get; set; }
         [JsonPropertyName("ScanMin_mm")] public double ScanMin_mm { get; set; }
         [JsonPropertyName("ScanMax_mm")] public double ScanMax_mm { get; set; }
@@ -94,5 +110,7 @@ namespace Quantum_measurement_UI
         [JsonPropertyName("PowerDetectorAttenuatorEach_dB")] public double PowerDetectorAttenuatorEach_dB { get; set; }
         [JsonPropertyName("PowerDetectorAttenuatorTotal_dB")] public double PowerDetectorAttenuatorTotal_dB { get; set; }
         [JsonPropertyName("PowerDetectorAttenuatorCorrectionFactor")] public double PowerDetectorAttenuatorCorrectionFactor { get; set; }
+        [JsonPropertyName("IsDarkNoiseRun")] public bool IsDarkNoiseRun { get; set; }
+        [JsonPropertyName("DisplayAmplitudeUnit")] public string DisplayAmplitudeUnit { get; set; }
     }
 }

@@ -1330,7 +1330,7 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 	BOOL g_cal_valid = FALSE;// Size of one segment in the input data 
 	int gpu_skip0_samples = 0;
 	int gpu_skip1_samples = 0;
-	#define BYPASS_CALIBRATION_EDGE_ALGORITHM 1
+	#define BYPASS_CALIBRATION_EDGE_ALGORITHM 0
 
 	TCHAR msg[256] = { 0 };
 
@@ -1949,10 +1949,10 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 					g_delta_samples = delta_samples;   // store globally
 
 					// ------------------------------------------------------
-					// Triangular lock on Data_1 ch1 (period = 8 samples)
+					// Triangular lock on Data_1 ch1 (period = 8 frames)
 					//
-					// Goal: in the GPU view, the peak of Data_1 ch1 should
-					//       appear at the 2nd sample (frame index 2).
+					// Goal: in the GPU view, the lowest point of Data_1 ch1
+					//       should appear at the 4th pixel (frame index 3).
 					//
 					// We assume:
 					//   - Data_1 has 2 interleaved channels (A = ch1, B = ch2)
@@ -1960,19 +1960,20 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 					//   - base GPU skip = 16 samples (8 frames), i.e. base_frame % 8 = 0
 					// ------------------------------------------------------
 					const int triChan = 0;      // Data_1 ch1 (triangle)
-					const int period = 8;      // 8-sample period
-					int tri_peak_frame = -1;
-					double tri_peak_val = -1e30;
+					const int period = 8;       // 8-frame period
+					const int target_pixel_frame = 3; // 4th pixel, zero-based frame index
+					int tri_low_frame = -1;
+					double tri_low_val = 1e30;
 
 					// Scan the first 8 frames of Data_1 ch1
 					int maxTriFrames = (nFrames < period) ? nFrames : period;
 					for (int i = 0; i < maxTriFrames; ++i)
 					{
 						double v = (double)p0[i * nChan + triChan];
-						if (v > tri_peak_val)
+						if (v < tri_low_val)
 						{
-							tri_peak_val = v;
-							tri_peak_frame = i;     // frame index (0..7)
+							tri_low_val = v;
+							tri_low_frame = i;     // frame index (0..7)
 						}
 					}
 
@@ -1980,16 +1981,16 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 					int base_skip_samples = 16;
 
 					int extra_frames = 0;
-					if (tri_peak_frame >= 0)
+					if (tri_low_frame >= 0)
 					{
-						// We want: (start_frame + 2) ? tri_peak_frame (mod 8)
+						// We want: (start_frame + target_pixel_frame) == tri_low_frame (mod 8)
 						// start_frame = base_frame + extra_frames
 						// base_frame = base_skip_samples / nChan = 8 -> 0 mod 8
-						// => extra_frames ? tri_peak_frame - 2 (mod 8)
-						extra_frames = (tri_peak_frame - 2) & (period - 1); // mod 8
+						// => extra_frames == tri_low_frame - target_pixel_frame (mod 8)
+						extra_frames = (tri_low_frame - target_pixel_frame) & (period - 1); // mod 8
 
-						printf("CAL: triangle peak frame = %d, extra_frames = %d\n",
-							tri_peak_frame, extra_frames);
+						printf("CAL: triangle low frame = %d, target pixel frame = %d, extra_frames = %d\n",
+							tri_low_frame, target_pixel_frame, extra_frames);
 					}
 
 					// Convert extra_frames to samples and apply to both boards

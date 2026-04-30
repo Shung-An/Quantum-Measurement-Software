@@ -84,6 +84,34 @@ namespace Quantum_measurement_UI
             SendCommand($"EX {program}");
         }
 
+        public bool TryExecuteProgram(string program, out string message)
+        {
+            if (string.IsNullOrWhiteSpace(program))
+            {
+                message = "No ESP program name was provided.";
+                return false;
+            }
+
+            try
+            {
+                ClearAllErrors();
+                ExecuteProgram(program.Trim());
+                message = $"Program command sent: {program.Trim()}";
+                return true;
+            }
+            catch (Ivi.Visa.IOTimeoutException ex)
+            {
+                ResetIoStateAfterReadFailure();
+                message = $"ESP timeout while sending program command: {ex.Message}";
+                return false;
+            }
+            catch (Exception ex)
+            {
+                message = $"Failed to send ESP program command: {ex.Message}";
+                return false;
+            }
+        }
+
         /// <summary>
         /// Aborts the currently running program
         /// </summary>
@@ -156,11 +184,23 @@ namespace Quantum_measurement_UI
         public int getMotionStatus()
         {
             string axisPrefix = Axis.ToString();
-            string response = Query($"{axisPrefix}MD?")?.Trim();
-            
-            if (int.TryParse(response, out int status))
+
+            try
             {
-                return status;
+                string response = Query($"{axisPrefix}MD?")?.Trim();
+
+                if (int.TryParse(response, out int status))
+                {
+                    return status;
+                }
+            }
+            catch (Ivi.Visa.IOTimeoutException)
+            {
+                ResetIoStateAfterReadFailure();
+            }
+            catch
+            {
+                ResetIoStateAfterReadFailure();
             }
 
             return -1; // Return -1 if parsing failed

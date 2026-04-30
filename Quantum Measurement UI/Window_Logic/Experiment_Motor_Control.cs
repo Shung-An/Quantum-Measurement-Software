@@ -109,6 +109,7 @@ namespace Quantum_measurement_UI
                 motionCancellationTokenSource?.Cancel();         // Stop automatic motion
                 autobalancer?.Stop();                            // Stop autobalancer
                 autoReadCts?.Cancel();
+                signalReadCts?.Cancel();
 
                 esp300Controller?.AbortProgram();                      // Stop ESP300 controller
 
@@ -132,7 +133,10 @@ namespace Quantum_measurement_UI
                 await Task.Delay(500);
 
                 // Close pipe
-                autoReadCts.Dispose();                          // Stop auto read
+                autoReadCts?.Dispose();                          // Stop auto read
+                autoReadCts = null;
+                signalReadCts?.Dispose();
+                signalReadCts = null;
                 pipeClient?.Dispose();
                 pipeClient = null;
 
@@ -356,6 +360,7 @@ namespace Quantum_measurement_UI
                 // Stop Autobalancer if it was running
                 autobalancer?.Stop();
                 autoReadCts?.Cancel();
+                signalReadCts?.Cancel();
 
                 // Stop ESP300 and Delay Stage
                 esp300Controller?.AbortProgram();
@@ -377,6 +382,9 @@ namespace Quantum_measurement_UI
 
                 // --- C. Cleanup Pipe & Process ---
                 autoReadCts?.Dispose();
+                autoReadCts = null;
+                signalReadCts?.Dispose();
+                signalReadCts = null;
                 pipeClient?.Dispose();
                 pipeClient = null;
 

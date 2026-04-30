@@ -4,6 +4,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Threading;
 using System.Collections.Generic;
+using System.Globalization;
 using NationalInstruments.DAQmx;
 
 namespace QuantumDAQService
@@ -14,88 +15,96 @@ namespace QuantumDAQService
         {
             Console.WriteLine("QuantumDAQService started.");
 
-            using (var server = new NamedPipeServerStream("QuantumDAQPipe", PipeDirection.InOut, 1, PipeTransmissionMode.Message))
+            while (true)
             {
-                Console.WriteLine("Waiting for client connection...");
-                server.WaitForConnection();
-                Console.WriteLine("Client connected.");
-
-                byte[] lengthBuffer = new byte[4];
-                var daqController = new DaqController();
-
-                while (true)
+                using (var server = new NamedPipeServerStream("QuantumDAQPipe", PipeDirection.InOut, 1, PipeTransmissionMode.Message))
+                using (var daqController = new DaqController())
                 {
-                    int bytesRead = server.Read(lengthBuffer, 0, 4);
-                    if (bytesRead == 0) continue;
+                    Console.WriteLine("Waiting for client connection...");
+                    server.WaitForConnection();
+                    Console.WriteLine("Client connected.");
 
-                    int messageLength = BitConverter.ToInt32(lengthBuffer, 0);
-                    if (messageLength <= 0 || messageLength > 4096) continue;
+                    byte[] lengthBuffer = new byte[4];
 
-                    byte[] messageBytes = new byte[messageLength];
-                    int totalRead = 0;
-
-                    while (totalRead < messageLength)
+                    while (server.IsConnected)
                     {
-                        int read = server.Read(messageBytes, totalRead, messageLength - totalRead);
-                        if (read == 0) break;
-                        totalRead += read;
-                    }
+                        int bytesRead = server.Read(lengthBuffer, 0, 4);
+                        if (bytesRead == 0) break;
 
-                    if (totalRead == messageLength)
-                    {
-                        string command = Encoding.UTF8.GetString(messageBytes).Trim();
-                        string[] parts = command.Split(' ');
-                        string cmd = parts[0];
+                        int messageLength = BitConverter.ToInt32(lengthBuffer, 0);
+                        if (messageLength <= 0 || messageLength > 4096) continue;
 
-                        try
+                        byte[] messageBytes = new byte[messageLength];
+                        int totalRead = 0;
+
+                        while (totalRead < messageLength)
                         {
-                            switch (cmd)
+                            int read = server.Read(messageBytes, totalRead, messageLength - totalRead);
+                            if (read == 0) break;
+                            totalRead += read;
+                        }
+
+                        if (totalRead == messageLength)
+                        {
+                            string command = Encoding.UTF8.GetString(messageBytes).Trim();
+                            string[] parts = command.Split(' ');
+                            string cmd = parts[0];
+
+                            try
                             {
-                                case "StartAI":
-                                    double sampleRateHz = 10000;
-                                    if (parts.Length >= 3)
-                                        sampleRateHz = double.Parse(parts[2]);
-                                    string[] channels = parts[1].Split(',');
-                                    daqController.InitializeAnalogInput(channels, sampleRateHz);
-                                    daqController.StartContinuousReading();
-                                    SendResponse(server, "Analog Input Initialized\\n");
-                                    break;
+                                switch (cmd)
+                                {
+                                    case "StartAI":
+                                        double sampleRateHz = 10000;
+                                        if (parts.Length >= 3)
+                                            sampleRateHz = double.Parse(parts[2]);
+                                        string[] channels = parts[1].Split(',');
+                                        daqController.InitializeAnalogInput(channels, sampleRateHz);
+                                        daqController.StartContinuousReading();
+                                        SendResponse(server, "Analog Input Initialized\n");
+                                        break;
 
-                                case "ReadAI":
-                                    double[] values = daqController.GetBufferedData();
-                                    string response = string.Join(",", values) + "\\n";
-                                    SendResponse(server, response);
-                                    break;
+                                    case "ReadAI":
+                                        int samplesPerChannel = 150;
+                                        if (parts.Length >= 2 && int.TryParse(parts[1], out int requestedSamples))
+                                            samplesPerChannel = Math.Max(1, Math.Min(requestedSamples, 1000));
+                                        double[] values = daqController.GetBufferedData(samplesPerChannel);
+                                        string response = string.Join(",", Array.ConvertAll(values, value => value.ToString("G17", CultureInfo.InvariantCulture))) + "\n";
+                                        SendResponse(server, response);
+                                        break;
 
-                                case "StartAO":
-                                    daqController.InitializeAnalogOutput(parts[1]);
-                                    SendResponse(server, "Analog Output Initialized\\n");
-                                    break;
+                                    case "StartAO":
+                                        daqController.InitializeAnalogOutput(parts[1]);
+                                        SendResponse(server, "Analog Output Initialized\n");
+                                        break;
 
-                                case "WriteAO":
-                                    double voltage = double.Parse(parts[1]);
-                                    daqController.WriteAnalogOutput(voltage);
-                                    SendResponse(server, "Analog Output Written\\n");
-                                    break;
+                                    case "WriteAO":
+                                        double voltage = double.Parse(parts[1]);
+                                        daqController.WriteAnalogOutput(voltage);
+                                        SendResponse(server, "Analog Output Written\n");
+                                        break;
 
-                                case "StopDAQ":
-                                    daqController.Dispose();
-                                    SendResponse(server, "DAQ Tasks Disposed\\n");
-                                    break;
+                                    case "StopDAQ":
+                                        daqController.Dispose();
+                                        SendResponse(server, "DAQ Tasks Disposed\n");
+                                        break;
 
-                                case "Exit":
-                                    return;
+                                    case "Exit":
+                                        return;
 
-                                default:
-                                    SendResponse(server, "Unknown Command\\n");
-                                    break;
+                                    default:
+                                        SendResponse(server, "Unknown Command\n");
+                                        break;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                SendResponse(server, "Error: " + ex.Message + "\n");
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            SendResponse(server, "Error: " + ex.Message + "\\n");
-                        }
                     }
+
+                    Console.WriteLine("Client disconnected. Waiting for next client...");
                 }
             }
         }
@@ -205,7 +214,7 @@ namespace QuantumDAQService
             aiReaderThread.Start();
         }
 
-        public double[] GetBufferedData()
+        public double[] GetBufferedData(int samplesPerChannel)
         {
             lock (channelBuffers)
             {
@@ -213,8 +222,10 @@ namespace QuantumDAQService
                 foreach (var buf in channelBuffers)
                     minCount = Math.Min(minCount, buf.Count);
 
+                int count = Math.Min(samplesPerChannel, minCount);
+                int start = minCount - count;
                 List<double> flat = new List<double>();
-                for (int i = 0; i < minCount; i++)
+                for (int i = start; i < minCount; i++)
                 {
                     for (int ch = 0; ch < channelBuffers.Length; ch++)
                     {

@@ -50,18 +50,32 @@ namespace QuantumSqueezingUI
                 await pipeClient.WriteAsync(messageBytes, 0, messageBytes.Length);
                 await pipeClient.FlushAsync();
 
-                // Read response (optional length-prefixed too)
                 byte[] responseLengthBytes = new byte[4];
-                await pipeClient.ReadAsync(responseLengthBytes, 0, 4);
+                await ReadExactAsync(responseLengthBytes, 0, responseLengthBytes.Length);
                 int responseLength = BitConverter.ToInt32(responseLengthBytes, 0);
+                if (responseLength < 0 || responseLength > 1024 * 1024)
+                    throw new InvalidOperationException($"Invalid DAQ pipe response length: {responseLength}");
 
                 byte[] responseBytes = new byte[responseLength];
-                await pipeClient.ReadAsync(responseBytes, 0, responseLength);
+                await ReadExactAsync(responseBytes, 0, responseLength);
                 return Encoding.UTF8.GetString(responseBytes);
             }
             finally
             {
                 pipeLock.Release();
+            }
+        }
+
+        private async Task ReadExactAsync(byte[] buffer, int offset, int count)
+        {
+            int totalRead = 0;
+            while (totalRead < count)
+            {
+                int read = await pipeClient.ReadAsync(buffer, offset + totalRead, count - totalRead);
+                if (read == 0)
+                    throw new IOException("DAQ pipe closed before a complete response was received.");
+
+                totalRead += read;
             }
         }
 
