@@ -1,0 +1,58 @@
+{
+  "Timestamp": "2026-04-27 15:13:23",
+  "Duration": "00:05:06",
+  "Filename": "test.txt",
+  "Description": "Testing run",
+  "Sample": "Unknown",
+  "Tags": [],
+  "Configuration": {
+    "EnableFFT": false,
+    "ExternalClock": "Off",
+    "Motor1Position": "0",
+    "Motor2Position": "-3",
+    "ExternalClockStatus": "Off"
+  },
+  "PhysicsData": {
+    "Temperature_K": 294,
+    "OnSamplePower_mW": null,
+    "PowerDetectorAttenuatorApplied": false,
+    "PowerDetectorAttenuatorCount": 0,
+    "PowerDetectorAttenuatorEach_dB": 0.0,
+    "PowerDetectorAttenuatorTotal_dB": 0.0,
+    "PowerDetectorAttenuatorCorrectionFactor": 1.0,
+    "Power_mW_1": 0.06,
+    "Power_mW_2": 0.06,
+    "Sensitivity_V_photon": 9.5e-07,
+    "ShotNoise1_V": 0.0023,
+    "ShotNoise2_V": 0.0024,
+    "SignalLevel_V2_rtHz": 6.31e-10,
+    "ConversionFactor_V2_rad2": 33.6,
+    "IsDarkNoiseRun": false,
+    "DarkNoiseLabel": "Signal",
+    "DarkNoiseReason": null,
+    "DisplayAmplitudeUnit": "urad^2",
+    "ShotNoiseResult_urad2_rtHz": 18.8,
+    "ScanRange_mm": 0.0,
+    "ScanMin_mm": 25.0,
+    "ScanMax_mm": 25.0
+  },
+  "PostProcessing": {
+    "Pipeline": "cm_pipeline_all_in_one.py",
+    "CacheSignature": {
+      "version": "2026-04-27-skip-fft-analysis-v1",
+      "detector_area_scale": 5.364418029785156e-11,
+      "attenuator_assumption": false,
+      "enable_dropped_window_gating": false,
+      "enable_saturation_cleanup": false,
+      "enable_variance_gating": true,
+      "enable_channel_health_gating": false,
+      "enable_even_frames_only": false,
+      "enable_fft_analysis": false,
+      "bin_mm": 0.1,
+      "mm_to_ps": 6.6,
+      "saturation_threshold_ch11": 3e-07,
+      "shot_noise_result_v2_threshold": 10000
+    },
+    "ProcessedAt": "2026-04-27T15:14:06"
+  }
+}
