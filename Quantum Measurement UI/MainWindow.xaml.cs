@@ -70,6 +70,8 @@ namespace Quantum_measurement_UI
             };
             elapsedTimer.Tick += UpdateElapsedTime;
 
+            LoadRecentMetadataIntoUi();
+
             Loaded += (_, _) => _ = StartUsbHardwareInitializationAsync();
         }
 

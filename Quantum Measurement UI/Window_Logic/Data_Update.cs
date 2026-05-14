@@ -154,19 +154,23 @@ namespace Quantum_measurement_UI
                     DAQChannel3Values.Count == 0 || DAQChannel4Values.Count == 0)
                 {
                     CurrentSensitivityTextBlock.Text = "Shot Noise: N/A";
+                    DetectorPower1.Text = "N/A";
+                    DetectorPower2.Text = "N/A";
                     return;
                 }
 
                 // === Constants ===
-                const double eCharge = 1.6e-19;            // J/eV
-                const double photonEnergy_eV = 1.6;        // 780 nm
+                const double planckConstant = 6.62607015e-34;
+                const double speedOfLight = 299792458.0;
                 const double repRate = 7.6e7;                // 80 MHz
-                const double gain = 24500;                 // V/A
                 const double responseTime = 3.5e-9;        // 3.5 ns
-                const double responsivity = 0.53;           // A/W
-                const double VtoW = 0.0001;                 // 10 mV = 1 µW
 
-                double photonEnergy_J = photonEnergy_eV * eCharge;
+                double wavelengthNm = GetLaserWavelengthNm();
+                double photonEnergy_J = planckConstant * speedOfLight / (wavelengthNm * 1e-9);
+                string detector = GetSelectedDetector();
+                double responsivity = GetSelectedDetectorResponsivity();
+                double referenceResponsivity = DetectorTypes.GetPowerCalibrationResponsivity(detector);
+                double detectorVoltagePerMw = DetectorTypes.GetPowerCalibrationVoltagePerMw(detector);
 
                 // === Step 1: Average voltages for each detector ===
                 double Vdet1 = (DAQChannel1Values[^1] + DAQChannel2Values[^1]) / 2.0;
@@ -174,9 +178,14 @@ namespace Quantum_measurement_UI
                 bool gageSignalAttenuatorApplied = PowerDetectorAttenuatorAppliedCheckBox.IsChecked == true;
                 double gageSignalCorrectionFactor = GetGageSignalCorrectionFactor();
 
-                // === Step 2: Convert to optical power (W) ===
-                double P1 = Vdet1 * VtoW;
-                double P2 = Vdet2 * VtoW;
+                // === Step 2: Convert detector voltage to optical power (W) ===
+                // The detector power meters are calibrated as V/mW at a reference wavelength.
+                // Correct other wavelengths by the ratio of reference responsivity to selected responsivity.
+                double wavelengthCorrection = referenceResponsivity / responsivity;
+                double P1 = (Vdet1 / detectorVoltagePerMw) * wavelengthCorrection * 1e-3;
+                double P2 = (Vdet2 / detectorVoltagePerMw) * wavelengthCorrection * 1e-3;
+                DetectorPower1.Text = $"{P1 * 1e3:F3}";
+                DetectorPower2.Text = $"{P2 * 1e3:F3}";
 
                 // === Step 3: Photon number per pulse ===
                 double N1 = P1 / (photonEnergy_J * repRate);
@@ -189,7 +198,7 @@ namespace Quantum_measurement_UI
                 }
 
                 // === Step 4: Sensitivity (V/photon) for both detectors ===
-                double sensitivity = responsivity * photonEnergy_J / responseTime * gain;
+                double sensitivity = responsivity * photonEnergy_J / responseTime * detectorVoltagePerMw * 1e3 / referenceResponsivity;
 
                 // === Step 5: Shot noise per pulse pair (V) for each detector ===
                 double shotNoise1 = Math.Sqrt(2) * Math.Sqrt(N1) * sensitivity;
@@ -216,18 +225,20 @@ namespace Quantum_measurement_UI
 
                 // === Optional debug logs ===
 
-                LogExperimentEvent($"Gage signal attenuator applied = {gageSignalAttenuatorApplied}, total = {(gageSignalAttenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, V^2 factor = {gageSignalCorrectionFactor:F1}");
+                LogExperimentEvent($"Gage signal attenuator applied = {gageSignalAttenuatorApplied}, total = {(gageSignalAttenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, amplitude factor = {gageSignalCorrectionFactor:F1}");
                 LogExperimentEvent($"Vdet1 = {Vdet1:F3} V, P1 = {P1 * 1e3:F2} mW, N1 = {N1:E2}");
                 LogExperimentEvent($"Vdet2 = {Vdet2:F3} V, P2 = {P2 * 1e3:F2} mW, N2 = {N2:E2}");
+                LogExperimentEvent($"Detector = {detector}, Responsivity = {responsivity:F3} A/W, Wavelength = {wavelengthNm:F2} nm, Power calibration = {detectorVoltagePerMw:F1} V/mW");
                 LogExperimentEvent($"Sensitivity = {sensitivity:E2} V/photon");
                 LogExperimentEvent($"Shot Noise1 = {shotNoise1:E2} V, Shot Noise2 = {shotNoise2:E2}");
                 LogExperimentEvent($"Signal Level = {shotNoiseSignal_V2_sqrtHz:E2} V²/√Hz");
                 LogExperimentEvent($"Conversion Factor = {conversionFactor_V2_per_rad2:E2} V²/rad²");
                 LogExperimentEvent($"Shot Noise Result = {noise_μrad2_sqrtHz:F2} μrad²/√Hz");
 
-                LogSensitivity($"Gage Signal Attenuator Applied = {gageSignalAttenuatorApplied}, Total = {(gageSignalAttenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, V^2 Correction Factor = {gageSignalCorrectionFactor:F1}");
+                LogSensitivity($"Gage Signal Attenuator Applied = {gageSignalAttenuatorApplied}, Total = {(gageSignalAttenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0):F1} dB, Amplitude Correction Factor = {gageSignalCorrectionFactor:F1}");
                 LogSensitivity($"Vdet1 = {Vdet1:F3} V, P1 = {P1 * 1e3:F2} mW, N1 = {N1:E2}");
                 LogSensitivity($"Vdet2 = {Vdet2:F3} V, P2 = {P2 * 1e3:F2} mW, N2 = {N2:E2}");
+                LogSensitivity($"Detector = {detector}, Responsivity = {responsivity:F3} A/W, Wavelength = {wavelengthNm:F2} nm, Power calibration = {detectorVoltagePerMw:F1} V/mW");
                 LogSensitivity($"Sensitivity = {sensitivity:E2} V/photon");
                 LogSensitivity($"Shot Noise1 = {shotNoise1:E2} V, Shot Noise2 = {shotNoise2:E2}");
                 LogSensitivity($"Signal Level = {shotNoiseSignal_V2_sqrtHz:E2} V²/√Hz");
@@ -243,6 +254,8 @@ namespace Quantum_measurement_UI
             catch (Exception ex)
             {
                 CurrentSensitivityTextBlock.Text = "Shot Noise: Error";
+                DetectorPower1.Text = "Error";
+                DetectorPower2.Text = "Error";
                 AppendMessage($"[Corrected Shot Noise Calc Error] {ex.Message}");
             }
         }

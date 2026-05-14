@@ -76,8 +76,6 @@ namespace Quantum_measurement_UI
 
         public void Start(double threshold, int numsegments)
         {
-            const int maxTuningRuns = 3;
-
             if (IsRunning)
             {
                 mainWindow.AppendMessage("Autobalance is already running.");
@@ -93,7 +91,7 @@ namespace Quantum_measurement_UI
                 try
                 {
                     var token = autobalanceCancellationTokenSource.Token;
-                    int tuningRunsCompleted = 0;
+                    bool reportedBalanced = false;
 
                     while (!token.IsCancellationRequested)
                     {
@@ -106,32 +104,26 @@ namespace Quantum_measurement_UI
                         while (isTimeToBalance() && !token.IsCancellationRequested)
                         {
                             bool balanced = await RunSingleSessionMinimize(numsegments, token, threshold);
-                            tuningRunsCompleted++;
 
                             if (balanced)
                             {
-                                dispatcher.Invoke(() =>
+                                if (!reportedBalanced)
                                 {
-                                    mainWindow.AppendMessage("[AutoBalance] Balance reached. Stopping single-session autobalance.");
-                                    mainWindow.LogExperimentEvent("[AutoBalance] Balance reached. Stopping single-session autobalance.");
-                                });
-                                autobalanceCancellationTokenSource?.Cancel();
-                                break;
+                                    dispatcher.Invoke(() =>
+                                    {
+                                        mainWindow.AppendMessage("[AutoBalance] Balance reached. Continuing autobalance until manually terminated.");
+                                        mainWindow.LogExperimentEvent("[AutoBalance] Balance reached. Continuing autobalance until manually terminated.");
+                                    });
+                                    reportedBalanced = true;
+                                }
                             }
-
-                            if (tuningRunsCompleted >= maxTuningRuns)
+                            else
                             {
-                                dispatcher.Invoke(() =>
-                                {
-                                    mainWindow.AppendMessage($"[AutoBalance] Reached {maxTuningRuns} tuning runs. Stopping autobalance.");
-                                    mainWindow.LogExperimentEvent($"[AutoBalance] Reached {maxTuningRuns} tuning runs. Stopping autobalance.");
-                                });
-                                autobalanceCancellationTokenSource?.Cancel();
-                                break;
+                                reportedBalanced = false;
                             }
 
                             // Optional: small delay between sweeps to avoid thrashing
-                            await Task.Delay(75, token);
+                            await Task.Delay(balanced ? 1000 : 75, token);
                         }
                     }
                 }

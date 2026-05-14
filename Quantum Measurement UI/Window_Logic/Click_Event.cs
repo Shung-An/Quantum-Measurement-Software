@@ -43,6 +43,11 @@ namespace Quantum_measurement_UI
                 AppendMessage("Cannot start Experiment: Alignment is currently active. Please turn off Alignment first.");
                 return;
             }
+            if (!RequestMetadataBeforeExperimentStart())
+            {
+                AppendMessage("Experiment start canceled before metadata was submitted.");
+                return;
+            }
             else
             {
                 await StartExperimentAsync();
@@ -142,6 +147,7 @@ namespace Quantum_measurement_UI
 
             return selectedTags;
         }
+
         private async Task RunMatlabAnalysisAsync(string resultFolderPath)
         {
             await Task.Run(() =>

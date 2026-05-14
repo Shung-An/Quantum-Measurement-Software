@@ -18,6 +18,10 @@ namespace Quantum_measurement_UI
         public string Filename { get; set; }
         public string Description { get; set; }
         public string Sample { get; set; }
+        public bool UsedOPO { get; set; }
+        public double? LaserWavelength_nm { get; set; }
+        public string Detector { get; set; }
+        public double DetectorResponsivity_A_per_W { get; set; }
 
         public List<string> Tags { get; set; } = new List<string>();
 
@@ -64,6 +68,9 @@ namespace Quantum_measurement_UI
         [JsonIgnore]
         public double ScanRange => PhysicsData?.ScanRange_mm ?? 0;
 
+        [JsonIgnore]
+        public double? ScanVelocity => PhysicsData?.ScanVelocity_mm_s;
+
         // 2. Motor Positions (Useful context from Metadata)
         [JsonIgnore]
         public string MotorPositions
@@ -99,12 +106,17 @@ namespace Quantum_measurement_UI
         [JsonPropertyName("ScanRange_mm")] public double ScanRange_mm { get; set; }
         [JsonPropertyName("ScanMin_mm")] public double ScanMin_mm { get; set; }
         [JsonPropertyName("ScanMax_mm")] public double ScanMax_mm { get; set; }
+        [JsonPropertyName("ScanVelocity_mm_s")] public double? ScanVelocity_mm_s { get; set; }
         [JsonPropertyName("ShotNoise1_V")] public double ShotNoise1_V { get; set; }
         [JsonPropertyName("ShotNoise2_V")] public double ShotNoise2_V { get; set; }
         [JsonPropertyName("SignalLevel_V2_rtHz")] public double SignalLevel_V2_rtHz { get; set; }
         [JsonPropertyName("ConversionFactor_V2_rad2")] public double ConversionFactor_V2_rad2 { get; set; }
         [JsonPropertyName("Temperature_K")] public double? Temperature_K { get; set; }
         [JsonPropertyName("OnSamplePower_mW")] public double? OnSamplePower_mW { get; set; }
+        [JsonPropertyName("UsedOPO")] public bool UsedOPO { get; set; }
+        [JsonPropertyName("LaserWavelength_nm")] public double? LaserWavelength_nm { get; set; }
+        [JsonPropertyName("Detector")] public string Detector { get; set; }
+        [JsonPropertyName("DetectorResponsivity_A_per_W")] public double DetectorResponsivity_A_per_W { get; set; }
         [JsonPropertyName("PowerDetectorAttenuatorApplied")] public bool PowerDetectorAttenuatorApplied { get; set; }
         [JsonPropertyName("PowerDetectorAttenuatorCount")] public int PowerDetectorAttenuatorCount { get; set; }
         [JsonPropertyName("PowerDetectorAttenuatorEach_dB")] public double PowerDetectorAttenuatorEach_dB { get; set; }

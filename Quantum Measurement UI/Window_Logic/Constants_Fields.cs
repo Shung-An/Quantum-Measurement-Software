@@ -168,8 +168,10 @@ namespace Quantum_measurement_UI
 
         // Add this under your other private fields
         private double conversionFactor_V2_per_rad2 = 1.0;
-        private const double PowerDetectorAttenuatorTotalDb = 20.0;
-        private static readonly double PowerDetectorAttenuatorCorrectionFactor = Math.Pow(10.0, PowerDetectorAttenuatorTotalDb / 10.0);
+        private const int PowerDetectorAttenuatorCount = 2;
+        private const double PowerDetectorAttenuatorEachDb = 20.0;
+        private const double PowerDetectorAttenuatorTotalDb = PowerDetectorAttenuatorCount * PowerDetectorAttenuatorEachDb;
+        private static readonly double PowerDetectorAttenuatorCorrectionFactor = Math.Pow(10.0, PowerDetectorAttenuatorTotalDb / 20.0);
         // Add this with your other public properties in MainWindow
         public ChartValues<double> IntegratedDataHistory { get; set; } = new ChartValues<double>();
 

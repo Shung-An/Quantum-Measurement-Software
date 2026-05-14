@@ -52,6 +52,8 @@ namespace Quantum_measurement_UI
 
                 // Initialize the experiment log
                 await AsyncInitializeExperimentLog();
+                SaveExperimentMetadata(Path.Combine(resultsBaseDirectory, experimentLogDirectory), "00:00:00");
+                LogExperimentEvent("Initial experiment metadata saved at acquisition start.");
 
 
 
@@ -450,6 +452,40 @@ namespace Quantum_measurement_UI
             }
         }
 
+        private double? TryReadESPScanVelocityMmPerS()
+        {
+            try
+            {
+                if (esp300Controller == null || !esp300Controller.IsConnected)
+                {
+                    return null;
+                }
+
+                string axisPrefix = esp300Controller.Axis.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                string response = esp300Controller.Query($"{axisPrefix}VA?").Trim();
+                if (double.TryParse(
+                        response,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out double velocity))
+                {
+                    return velocity;
+                }
+
+                if (double.TryParse(response, out velocity))
+                {
+                    return velocity;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendMessage($"Could not read ESP scan velocity: {ex.Message}");
+                LogExperimentEvent($"Could not read ESP scan velocity: {ex.Message}");
+            }
+
+            return null;
+        }
+
         private void SaveExperimentMetadata(string folderPath, string elapsedTime)
         {
             double? temperatureK = null;
@@ -470,6 +506,10 @@ namespace Quantum_measurement_UI
             bool powerDetectorAttenuatorApplied = PowerDetectorAttenuatorAppliedCheckBox.IsChecked == true;
             double powerDetectorAttenuatorTotalDb = powerDetectorAttenuatorApplied ? PowerDetectorAttenuatorTotalDb : 0.0;
             double powerDetectorAttenuatorCorrectionFactor = powerDetectorAttenuatorApplied ? PowerDetectorAttenuatorCorrectionFactor : 1.0;
+            string detector = GetSelectedDetector();
+            double? laserWavelengthNm = ParseOptionalDouble(LaserWavelengthInput.Text);
+            double detectorResponsivity = DetectorTypes.GetResponsivity(detector, laserWavelengthNm);
+            double? scanVelocityMmPerS = TryReadESPScanVelocityMmPerS();
 
             // Create the metadata object with all fields
             var meta = new
@@ -482,6 +522,10 @@ namespace Quantum_measurement_UI
                 // Save as a comma-joined string (easier to read in Excel/History Grid)
                 Sample = string.Join(", ", samples),
                 Tags = tags,
+                UsedOPO = UsedOpoCheckBox.IsChecked == true,
+                LaserWavelength_nm = laserWavelengthNm,
+                Detector = detector,
+                DetectorResponsivity_A_per_W = detectorResponsivity,
                                       
 
                 // Machine Configuration (snapshot of current state)
@@ -497,9 +541,14 @@ namespace Quantum_measurement_UI
                 {
                     Temperature_K = temperatureK,
                     OnSamplePower_mW = onSamplePowerMw,
+                    UsedOPO = UsedOpoCheckBox.IsChecked == true,
+                    LaserWavelength_nm = laserWavelengthNm,
+                    Detector = detector,
+                    DetectorResponsivity_A_per_W = detectorResponsivity,
+                    ScanVelocity_mm_s = scanVelocityMmPerS,
                     PowerDetectorAttenuatorApplied = powerDetectorAttenuatorApplied,
-                    PowerDetectorAttenuatorCount = powerDetectorAttenuatorApplied ? 2 : 0,
-                    PowerDetectorAttenuatorEach_dB = powerDetectorAttenuatorApplied ? 10.0 : 0.0,
+                    PowerDetectorAttenuatorCount = powerDetectorAttenuatorApplied ? PowerDetectorAttenuatorCount : 0,
+                    PowerDetectorAttenuatorEach_dB = powerDetectorAttenuatorApplied ? PowerDetectorAttenuatorEachDb : 0.0,
                     PowerDetectorAttenuatorTotal_dB = powerDetectorAttenuatorTotalDb,
                     PowerDetectorAttenuatorCorrectionFactor = powerDetectorAttenuatorCorrectionFactor
                 }
