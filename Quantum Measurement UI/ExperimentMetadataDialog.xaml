@@ -52,7 +52,8 @@
                     <TextBlock Grid.Row="6" Grid.Column="0" Text="Options" VerticalAlignment="Center" Margin="0,0,10,8"/>
                     <StackPanel Grid.Row="6" Grid.Column="1" Margin="0,0,0,8">
                         <CheckBox x:Name="UsedOpoCheckBox" Content="Used OPO" Margin="0,0,0,5"/>
-                        <CheckBox x:Name="AttenuatorCheckBox" Content="2 x 20 dB attenuator on Gage signal"/>
+                        <CheckBox x:Name="AttenuatorCheckBox" Content="2 x 20 dB attenuator on Gage signal" Margin="0,0,0,5"/>
+                        <CheckBox x:Name="EnableFftCheckBox" Content="Enable FFT raw-data save" ToolTip="When enabled, StreamThruGPU.ini uses SaveToFile=1 and raw Data_*.bin files are saved into this run folder."/>
                     </StackPanel>
                 </Grid>
 

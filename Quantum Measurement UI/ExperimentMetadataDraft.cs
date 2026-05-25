@@ -9,6 +9,7 @@ namespace Quantum_measurement_UI
         public double? Temperature_K { get; set; } = 294;
         public double? OnSamplePower_mW { get; set; }
         public bool PowerDetectorAttenuatorApplied { get; set; }
+        public bool EnableFFT { get; set; }
         public List<string> Samples { get; set; } = new() { "Unknown" };
         public List<string> Tags { get; set; } = new();
         public bool UsedOpo { get; set; }

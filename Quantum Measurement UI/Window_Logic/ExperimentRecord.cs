@@ -22,10 +22,15 @@ namespace Quantum_measurement_UI
         public double? LaserWavelength_nm { get; set; }
         public string Detector { get; set; }
         public double DetectorResponsivity_A_per_W { get; set; }
+        public bool FFTEnabled { get; set; }
+        public bool RawStreamSaveToFile { get; set; }
+        public string RawDataFilePrefix { get; set; }
+        public string RawDataFilePattern { get; set; }
 
         public List<string> Tags { get; set; } = new List<string>();
 
         public ExperimentConfiguration Configuration { get; set; }
+        public FftAnalysisMetadata FFTAnalysis { get; set; }
         public ExperimentPhysics PhysicsData { get; set; }
 
         // --- Helper Properties ---
@@ -90,10 +95,61 @@ namespace Quantum_measurement_UI
     public class ExperimentConfiguration
     {
         public bool EnableFFT { get; set; }
+        public bool FFTEnabled { get; set; }
+        public string FFTProvider { get; set; }
+        public bool ExternalFftExecutableUsed { get; set; }
+        public bool RawStreamSaveToFile { get; set; }
+        public string RawDataFilePrefix { get; set; }
+        public string RawDataFilePattern { get; set; }
+        public string StreamIniPath { get; set; }
         public string ExternalClock { get; set; }
         public string Motor1Position { get; set; }
         public string Motor2Position { get; set; }
         public string ExternalClockStatus { get; set; }
+    }
+
+    public class FftAnalysisMetadata
+    {
+        public bool Enabled { get; set; }
+        public bool Applied { get; set; }
+        public string Provider { get; set; }
+        public string InputData { get; set; }
+        public string Mode { get; set; }
+        public string RawDataLayout { get; set; }
+        public int? InterleavedChannels { get; set; }
+        public int? PhysicalChannels { get; set; }
+        public double? SampleRateHz { get; set; }
+        public int? FftLength { get; set; }
+        public int? MaxFramesPerFile { get; set; }
+        public int? SeriesCount { get; set; }
+        public string OutputPng { get; set; }
+        public string OutputCsv { get; set; }
+        public string DescriptionLabel { get; set; }
+        public Dictionary<string, FftAnalysisModeMetadata> Modes { get; set; } = new Dictionary<string, FftAnalysisModeMetadata>();
+        public List<string> AvailableModes { get; set; } = new List<string>();
+        public string LastSyncedAt { get; set; }
+    }
+
+    public class FftAnalysisModeMetadata
+    {
+        public string Mode { get; set; }
+        public string ModeKey { get; set; }
+        public string Provider { get; set; }
+        public string OutputPng { get; set; }
+        public string OutputCsv { get; set; }
+        public int? FftLength { get; set; }
+        public double? SampleRateHz { get; set; }
+        public int? MaxFramesPerFile { get; set; }
+        public int? SeriesCount { get; set; }
+        public List<FftAnalysisChannelMetadata> Channels { get; set; } = new List<FftAnalysisChannelMetadata>();
+        public string AppliedAt { get; set; }
+    }
+
+    public class FftAnalysisChannelMetadata
+    {
+        public int ChannelIndex { get; set; }
+        public string ChannelLabel { get; set; }
+        public string SeriesName { get; set; }
     }
 
     public class ExperimentPhysics

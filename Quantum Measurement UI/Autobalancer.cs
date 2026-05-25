@@ -38,9 +38,10 @@ namespace Quantum_measurement_UI
         private double previousDiffM1 = double.NaN;
         private double previousDiffM2 = double.NaN;
 
-        // Direction that reduces a *positive* metric for each channel. Flip on the bench if needed.
-        public int A_PosMetricReduceDir = +1; // motor 1
-        public int B_PosMetricReduceDir = -1; // motor 2
+        // Direction that reduces a positive signed voltage difference for each channel.
+        // These are calibrated at the start of each autobalance session.
+        public int A_PosMetricReduceDir = +1; // motor 1, diff = ch1 - ch2
+        public int B_PosMetricReduceDir = -1; // motor 2, diff = ch3 - ch4
 
         // Control/hysteresis
         private const double Deadband = 1e-6;           // inside this, do nothing
@@ -182,43 +183,35 @@ namespace Quantum_measurement_UI
             const int maxIterationsPerSession = 10;
             const int maxTotalSessionTravelPerMotor = 24;
             const int settleDelayMs = 400;
+            const int directionProbeStep = 8;
 
             int sessionTravelMotor1 = 0;
             int sessionTravelMotor2 = 0;
             int iteration = 0;
             bool reachedBalance = false;
 
+            if (!await WaitForVoltageSamples(sampleSize, cancellationToken))
+            {
+                return false;
+            }
+
+            await CalibrateMotorDirection(1, sampleSize, directionProbeStep, settleDelayMs, tolerance, cancellationToken);
+            await CalibrateMotorDirection(2, sampleSize, directionProbeStep, settleDelayMs, tolerance, cancellationToken);
+
             while (!cancellationToken.IsCancellationRequested &&
                    isTimeToBalance() &&
                    iteration < maxIterationsPerSession)
             {
-                // Guard against empty or insufficiently filled DAQ buffers
-                if (mainWindow.DAQChannel1Values.Count < sampleSize ||
-                    mainWindow.DAQChannel2Values.Count < sampleSize ||
-                    mainWindow.DAQChannel3Values.Count < sampleSize ||
-                    mainWindow.DAQChannel4Values.Count < sampleSize)
+                if (!await WaitForVoltageSamples(sampleSize, cancellationToken))
                 {
-                    await Task.Delay(100, cancellationToken);
-                    continue;
+                    break;
                 }
 
-                // === Step 1: Calculate smoothed voltage differences ===
-                // Averages the last N values to reject high-frequency noise
-                double ch1Avg = mainWindow.DAQChannel1Values.TakeLast(sampleSize).Average();
-                double ch2Avg = mainWindow.DAQChannel2Values.TakeLast(sampleSize).Average();
-                double ch3Avg = mainWindow.DAQChannel3Values.TakeLast(sampleSize).Average();
-                double ch4Avg = mainWindow.DAQChannel4Values.TakeLast(sampleSize).Average();
-
-                double diffM1 = ch1Avg - ch2Avg;
-                double diffM2 = ch3Avg - ch4Avg;
+                (double diffM1, double diffM2) = ReadSmoothedVoltageDiffs(sampleSize);
                 currentMetricA = diffM1;
                 currentMetricB = diffM2;
 
-                dispatcher.Invoke(() =>
-                {
-                    mainWindow.PowerDiffCh1.Text = diffM1.ToString("F4");
-                    mainWindow.PowerDiffCh2.Text = diffM2.ToString("F4");
-                });
+                UpdateVoltageDifferenceUi(diffM1, diffM2);
 
                 motorController.GetCurrentPosition(1, out currentMotor1Position);
                 motorController.GetCurrentPosition(2, out currentMotor2Position);
@@ -236,7 +229,7 @@ namespace Quantum_measurement_UI
                 if (Math.Abs(diffM1) > tolerance && sessionTravelMotor1 < maxTotalSessionTravelPerMotor)
                 {
                     int step1 = ComputeDampedStep(diffM1, tolerance, previousDiffM1, maxTotalSessionTravelPerMotor - sessionTravelMotor1);
-                    int dir1 = diffM1 > 0 ? -1 : 1;
+                    int dir1 = diffM1 > 0 ? A_PosMetricReduceDir : -A_PosMetricReduceDir;
                     motorController.CheckForErrors();
 
                     await SafeMoveMotor(1, step1 * dir1, cancellationToken);
@@ -248,7 +241,7 @@ namespace Quantum_measurement_UI
                 if (Math.Abs(diffM2) > tolerance && sessionTravelMotor2 < maxTotalSessionTravelPerMotor)
                 {
                     int step2 = ComputeDampedStep(diffM2, tolerance, previousDiffM2, maxTotalSessionTravelPerMotor - sessionTravelMotor2);
-                    int dir2 = diffM2 > 0 ? 1 : -1;
+                    int dir2 = diffM2 > 0 ? B_PosMetricReduceDir : -B_PosMetricReduceDir;
                     motorController.CheckForErrors();
 
                     await SafeMoveMotor(2, step2 * dir2, cancellationToken);
@@ -279,6 +272,105 @@ namespace Quantum_measurement_UI
             });
 
             return reachedBalance;
+        }
+
+        private async Task<bool> WaitForVoltageSamples(int sampleSize, CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested && isTimeToBalance())
+            {
+                if (mainWindow.DAQChannel1Values.Count >= sampleSize &&
+                    mainWindow.DAQChannel2Values.Count >= sampleSize &&
+                    mainWindow.DAQChannel3Values.Count >= sampleSize &&
+                    mainWindow.DAQChannel4Values.Count >= sampleSize)
+                {
+                    return true;
+                }
+
+                await Task.Delay(100, cancellationToken);
+            }
+
+            return false;
+        }
+
+        private (double diffM1, double diffM2) ReadSmoothedVoltageDiffs(int sampleSize)
+        {
+            double ch1Avg = mainWindow.DAQChannel1Values.TakeLast(sampleSize).Average();
+            double ch2Avg = mainWindow.DAQChannel2Values.TakeLast(sampleSize).Average();
+            double ch3Avg = mainWindow.DAQChannel3Values.TakeLast(sampleSize).Average();
+            double ch4Avg = mainWindow.DAQChannel4Values.TakeLast(sampleSize).Average();
+
+            return (ch1Avg - ch2Avg, ch3Avg - ch4Avg);
+        }
+
+        private void UpdateVoltageDifferenceUi(double diffM1, double diffM2)
+        {
+            dispatcher.Invoke(() =>
+            {
+                mainWindow.PowerDiffCh1.Text = diffM1.ToString("F4");
+                mainWindow.PowerDiffCh2.Text = diffM2.ToString("F4");
+            });
+        }
+
+        private async Task CalibrateMotorDirection(
+            int motorNumber,
+            int sampleSize,
+            int probeStep,
+            int settleDelayMs,
+            double tolerance,
+            CancellationToken cancellationToken)
+        {
+            if (cancellationToken.IsCancellationRequested || !isTimeToBalance())
+            {
+                return;
+            }
+
+            (double beforeM1, double beforeM2) = ReadSmoothedVoltageDiffs(sampleSize);
+            double beforeDiff = motorNumber == 1 ? beforeM1 : beforeM2;
+
+            dispatcher.Invoke(() =>
+            {
+                mainWindow.LogExperimentEvent($"[AutoBalance] Calibrating Motor {motorNumber} direction with +{probeStep} step probe.");
+            });
+
+            await SafeMoveMotor(motorNumber, probeStep, cancellationToken);
+            await Task.Delay(settleDelayMs, cancellationToken);
+
+            if (!await WaitForVoltageSamples(sampleSize, cancellationToken))
+            {
+                return;
+            }
+
+            (double afterM1, double afterM2) = ReadSmoothedVoltageDiffs(sampleSize);
+            double afterDiff = motorNumber == 1 ? afterM1 : afterM2;
+            double delta = afterDiff - beforeDiff;
+
+            await SafeMoveMotor(motorNumber, -probeStep, cancellationToken);
+            await Task.Delay(settleDelayMs, cancellationToken);
+
+            double minimumUsefulDelta = Math.Max(Math.Abs(tolerance) * 0.25, 1e-5);
+            if (Math.Abs(delta) < minimumUsefulDelta)
+            {
+                dispatcher.Invoke(() =>
+                {
+                    mainWindow.LogExperimentEvent($"[AutoBalance] Motor {motorNumber} direction probe too small (delta={delta:F6}); keeping existing direction.");
+                });
+                return;
+            }
+
+            int reducePositiveDirection = delta < 0 ? +1 : -1;
+            if (motorNumber == 1)
+            {
+                A_PosMetricReduceDir = reducePositiveDirection;
+            }
+            else
+            {
+                B_PosMetricReduceDir = reducePositiveDirection;
+            }
+
+            dispatcher.Invoke(() =>
+            {
+                mainWindow.LogExperimentEvent($"[AutoBalance] Motor {motorNumber} direction calibrated: positive diff uses {reducePositiveDirection:+#;-#;0} steps. Probe delta={delta:F6}.");
+            });
         }
 
         private static int ComputeDampedStep(double diff, double tolerance, double previousDiff, int remainingTravelBudget)

@@ -18,6 +18,13 @@ using OxyPlot.Wpf;
 using OxyPlot.SkiaSharp;
 using OxyPlot.Annotations;
 using OxyPlot.Legends;
+using MathNet.Numerics.IntegralTransforms;
+using System.Globalization;
+using System.Numerics;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 
 
@@ -311,9 +318,16 @@ namespace Quantum_measurement_UI
         /// <summary>
         /// Event handler for running the FFT executable.
         /// </summary>
-        private void PlotFFTResult_Click(object sender, RoutedEventArgs e)
+        private async void PlotFFTResult_Click(object sender, RoutedEventArgs e)
         {
-            PlotSavedFFTResults();
+            string runFolder = CurrentExperimentFolderPath;
+            if (string.IsNullOrWhiteSpace(runFolder) || !Directory.Exists(runFolder))
+            {
+                AppendMessage("No active experiment folder was found for FFT analysis.");
+                return;
+            }
+
+            await PromptAndRunRawInterleavedFftAsync(runFolder);
         }
 
         private void EnableFFTCheckBox_Checked(object sender, RoutedEventArgs e)
@@ -374,219 +388,572 @@ namespace Quantum_measurement_UI
         }
 
 
-        private double Interpolate(double[] array, double index)
+        private enum RawInterleavedFftMode
         {
-            int i = (int)Math.Floor(index);
-            if (i < 0) return array[0];
-            if (i >= array.Length - 1) return array[^1];
-            double frac = index - i;
-            return array[i] * (1 - frac) + array[i + 1] * frac;
+            LowFrequencyNoise,
+            HighFrequencySpectrum
         }
 
+        private sealed record RawInterleavedFftSeries(string Name, double[] FrequencyHz, double[] Psd);
 
-        private List<(double fMHz, double dB)> FindPeaks(double[] freqsMHz, double[] linearPower, int minSeparationMHz = 10, double minProminenceDb = 6)
+        private sealed record RawInterleavedFftResult(
+            string RunFolder,
+            RawInterleavedFftMode Mode,
+            string PngPath,
+            string CsvPath,
+            int FftLength,
+            int InterleavedChannels,
+            int MaxFramesPerFile,
+            double SampleRateHz,
+            int SeriesCount,
+            List<string> SeriesNames);
+
+        private async Task PromptAndRunRawInterleavedFftAsync(string runFolder)
         {
-            List<(double fMHz, double dB)> peaks = new();
-
-            int N = linearPower.Length;
-            for (int i = 1; i < N - 1; i++)
+            RawInterleavedFftMode? selectedMode = await Dispatcher.InvokeAsync(AskRawInterleavedFftMode);
+            if (selectedMode == null)
             {
-                double y0 = linearPower[i - 1];
-                double y1 = linearPower[i];
-                double y2 = linearPower[i + 1];
-
-                // Check for local max
-                if (y1 <= y0 || y1 <= y2) continue;
-
-                double dB = 10 * Math.Log10(y1 + 1e-12);
-
-                // Check prominence
-                double baseline = 10 * Math.Log10(Math.Max(y0, y2) + 1e-12);
-                if ((dB - baseline) < minProminenceDb) continue;
-
-                // Parabolic interpolation for sub-bin accuracy
-                double delta = 0.5 * (y0 - y2) / (y0 - 2 * y1 + y2 + 1e-12);
-                double refinedIndex = i + delta;
-
-                if (refinedIndex < 0 || refinedIndex > N - 1) continue;
-
-                double fMHz = Interpolate(freqsMHz, refinedIndex);
-                double refinedPower = Interpolate(linearPower, refinedIndex);
-                double refinedDb = 10 * Math.Log10(refinedPower + 1e-12);
-
-                peaks.Add((fMHz, refinedDb));
+                AppendMessage("FFT analysis skipped.");
+                return;
             }
 
-            // Remove peaks that are too close to each other
-            List<(double fMHz, double dB)> filtered = new();
-            foreach (var peak in peaks.OrderByDescending(p => p.dB))
+            try
             {
-                if (filtered.All(p => Math.Abs(p.fMHz - peak.fMHz) > minSeparationMHz))
-                    filtered.Add(peak);
-            }
+                AppendMessage($"Starting {GetRawInterleavedFftModeLabel(selectedMode.Value)} FFT analysis...");
+                RawInterleavedFftResult result = await Task.Run(() => AnalyzeRawInterleavedFft(runFolder, selectedMode.Value));
+                UpdateRawInterleavedFftMetadata(result);
 
-            return filtered;
+                AppendMessage($"FFT analysis saved: {result.PngPath}");
+                AppendMessage($"FFT data saved: {result.CsvPath}");
+            }
+            catch (Exception ex)
+            {
+                AppendMessage("FFT analysis failed: " + ex.Message);
+                LogExperimentEvent("FFT analysis failed: " + ex.Message);
+            }
         }
 
-
-
-
-        private async void PlotSavedFFTResults()
+        private RawInterleavedFftMode? AskRawInterleavedFftMode()
         {
-            string fileA = @"C:\Quantum Squeezing\Quantum-Measurement-Software\Quantum Measurement UI\bin\Debug\net8.0-windows7.0\Data_1_1.bin";
-            string fileB = @"C:\Quantum Squeezing\Quantum-Measurement-Software\Quantum Measurement UI\bin\Debug\net8.0-windows7.0\Data_1_2.bin";
-            int fftLength = 8192;
-            int fftResultSize = fftLength / 2 + 1;
-            double Fs = 608e6;
+            MessageBoxResult result = MessageBox.Show(
+                "Choose the raw interleaved FFT analysis to run.\n\nYes: Low frequency noise, log-log plot\nNo: High frequency spectrum, semilog plot\nCancel: Skip FFT analysis",
+                "FFT Analysis",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question);
 
-            AppendMessage("⏳ Processing FFT and saving PNG...");
-            LogExperimentEvent("⏳ Processing FFT and saving PNG...");
+            return result switch
+            {
+                MessageBoxResult.Yes => RawInterleavedFftMode.LowFrequencyNoise,
+                MessageBoxResult.No => RawInterleavedFftMode.HighFrequencySpectrum,
+                _ => null
+            };
+        }
 
-            (double[] freqs, double[] dbA, double[] dbB,
-   (double fA, double dBA) peakA, (double fB, double dBB) peakB,
-   List<(double f, double dB)> peaksA, List<(double f, double dB)> peaksB) = await Task.Run(() =>
-   {
-       double[] avg1 = LoadAndAverage(fileA, fftResultSize);
-       double[] avg2 = LoadAndAverage(fileB, fftResultSize);
+        private RawInterleavedFftResult AnalyzeRawInterleavedFft(string runFolder, RawInterleavedFftMode mode)
+        {
+            const int interleavedChannels = 2;
+            const int maxFramesPerFile = 512;
 
-       double[] freqsMHz = Enumerable.Range(0, fftResultSize)
-                           .Select(i => i * Fs / fftLength / 1e6)
-                           .ToArray();
+            List<string> rawFiles = Directory.EnumerateFiles(runFolder, "Data_*.bin")
+                .Where(path => new FileInfo(path).Length >= interleavedChannels * sizeof(short) * 4096L)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-       var allPeaksA = FindPeaks(freqsMHz, avg1, minSeparationMHz: 20, minProminenceDb: 6)
-                           .OrderByDescending(p => p.dB)
-                           .Take(5)
-                           .ToList();
+            if (rawFiles.Count == 0)
+            {
+                throw new InvalidOperationException("No raw Data_*.bin files were found in the run folder.");
+            }
 
-       var allPeaksB = FindPeaks(freqsMHz, avg2, minSeparationMHz: 20, minProminenceDb: 6)
-                           .OrderByDescending(p => p.dB)
-                           .Take(5)
-                           .ToList();
+            double sampleRateHz = ReadConfiguredSampleRateHz();
+            int desiredFftLength = mode == RawInterleavedFftMode.LowFrequencyNoise ? 262144 : 65536;
+            int fftLength = ChooseFftLength(rawFiles, desiredFftLength, interleavedChannels);
 
+            List<RawInterleavedFftSeries> series = new();
+            foreach (string rawFile in rawFiles)
+            {
+                series.AddRange(ComputeRawInterleavedSpectra(rawFile, fftLength, interleavedChannels, sampleRateHz, maxFramesPerFile));
+            }
 
+            if (series.Count == 0)
+            {
+                throw new InvalidOperationException("The raw files were too short for FFT analysis.");
+            }
 
-       var peak1 = allPeaksA.OrderByDescending(p => p.dB).FirstOrDefault();
-       var peak2 = allPeaksB.OrderByDescending(p => p.dB).FirstOrDefault();
+            string outputDir = Path.Combine(runFolder, "fft_analysis");
+            Directory.CreateDirectory(outputDir);
 
-       double[] dB1 = avg1.Select(x => 10 * Math.Log10(x + 1e-12)).ToArray();
-       double[] dB2 = avg2.Select(x => 10 * Math.Log10(x + 1e-12)).ToArray();
+            string fileStem = mode == RawInterleavedFftMode.LowFrequencyNoise
+                ? "interleaved_fft_low_frequency_loglog"
+                : "interleaved_fft_high_frequency_semilog";
+            string pngPath = Path.Combine(outputDir, fileStem + ".png");
+            string csvPath = Path.Combine(outputDir, fileStem + ".csv");
 
-       return (freqsMHz, dB1, dB2, peak1, peak2, allPeaksA, allPeaksB);
-   });
+            SaveRawInterleavedFftCsv(csvPath, series, mode, sampleRateHz);
+            SaveRawInterleavedFftPlot(pngPath, series, mode, fftLength, sampleRateHz);
 
+            return new RawInterleavedFftResult(
+                runFolder,
+                mode,
+                pngPath,
+                csvPath,
+                fftLength,
+                interleavedChannels,
+                maxFramesPerFile,
+                sampleRateHz,
+                series.Count,
+                series.Select(item => item.Name).ToList());
+        }
 
-            string title1 = $"Ch1 Peak @ {peakA.fA:F1} MHz ({peakA.dBA:F1} dB)";
-            string title2 = $"Ch2 Peak @ {peakB.fB:F1} MHz ({peakB.dBB:F1} dB)";
+        private List<RawInterleavedFftSeries> ComputeRawInterleavedSpectra(
+            string rawFile,
+            int fftLength,
+            int interleavedChannels,
+            double sampleRateHz,
+            int maxFramesPerFile)
+        {
+            int usefulBins = fftLength / 2;
+            long frameBytes = (long)fftLength * interleavedChannels * sizeof(short);
+            int frameByteCount = checked((int)frameBytes);
+            long totalFrames = new FileInfo(rawFile).Length / frameBytes;
+            if (totalFrames <= 0)
+            {
+                return new List<RawInterleavedFftSeries>();
+            }
+
+            int framesToUse = (int)Math.Min(totalFrames, maxFramesPerFile);
+            long frameStep = Math.Max(1, totalFrames / framesToUse);
+            double[] window = CreateHannWindow(fftLength);
+            double windowPower = window.Sum(value => value * value);
+
+            double[][] accumulatedPsd = Enumerable.Range(0, interleavedChannels)
+                .Select(_ => new double[usefulBins])
+                .ToArray();
+
+            byte[] byteBuffer = new byte[frameByteCount];
+            short[] sampleBuffer = new short[fftLength * interleavedChannels];
+            Complex[] fftBuffer = new Complex[fftLength];
+
+            using FileStream stream = new(rawFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            int framesProcessed = 0;
+            for (int frameNumber = 0; frameNumber < framesToUse; frameNumber++)
+            {
+                long frameIndex = Math.Min(frameNumber * frameStep, totalFrames - 1);
+                stream.Position = frameIndex * frameBytes;
+                int bytesRead = ReadFullBuffer(stream, byteBuffer);
+                if (bytesRead < frameByteCount)
+                {
+                    continue;
+                }
+
+                Buffer.BlockCopy(byteBuffer, 0, sampleBuffer, 0, byteBuffer.Length);
+
+                for (int channel = 0; channel < interleavedChannels; channel++)
+                {
+                    double mean = 0.0;
+                    for (int i = 0; i < fftLength; i++)
+                    {
+                        mean += sampleBuffer[i * interleavedChannels + channel];
+                    }
+                    mean /= fftLength;
+
+                    for (int i = 0; i < fftLength; i++)
+                    {
+                        double centeredSample = sampleBuffer[i * interleavedChannels + channel] - mean;
+                        fftBuffer[i] = new Complex(centeredSample * window[i], 0.0);
+                    }
+
+                    Fourier.Forward(fftBuffer, FourierOptions.Matlab);
+                    for (int bin = 1; bin < usefulBins; bin++)
+                    {
+                        double magnitudeSquared = fftBuffer[bin].Real * fftBuffer[bin].Real
+                            + fftBuffer[bin].Imaginary * fftBuffer[bin].Imaginary;
+                        accumulatedPsd[channel][bin] += 2.0 * magnitudeSquared / (sampleRateHz * windowPower);
+                    }
+                }
+
+                framesProcessed++;
+            }
+
+            if (framesProcessed == 0)
+            {
+                return new List<RawInterleavedFftSeries>();
+            }
+
+            double[] frequencyHz = Enumerable.Range(0, usefulBins)
+                .Select(bin => bin * sampleRateHz / fftLength)
+                .ToArray();
+
+            string fileName = Path.GetFileNameWithoutExtension(rawFile);
+            List<RawInterleavedFftSeries> spectra = new();
+            for (int channel = 0; channel < interleavedChannels; channel++)
+            {
+                for (int bin = 1; bin < usefulBins; bin++)
+                {
+                    accumulatedPsd[channel][bin] = Math.Max(accumulatedPsd[channel][bin] / framesProcessed, 1e-30);
+                }
+
+                spectra.Add(new RawInterleavedFftSeries(
+                    $"{fileName} interleaved ch{channel + 1}",
+                    frequencyHz,
+                    accumulatedPsd[channel]));
+            }
+
+            return spectra;
+        }
+
+        private static int ReadFullBuffer(Stream stream, byte[] buffer)
+        {
+            int offset = 0;
+            while (offset < buffer.Length)
+            {
+                int read = stream.Read(buffer, offset, buffer.Length - offset);
+                if (read == 0)
+                {
+                    break;
+                }
+                offset += read;
+            }
+            return offset;
+        }
+
+        private static double[] CreateHannWindow(int length)
+        {
+            double[] window = new double[length];
+            for (int i = 0; i < length; i++)
+            {
+                window[i] = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / (length - 1));
+            }
+            return window;
+        }
+
+        private static int ChooseFftLength(List<string> rawFiles, int desiredFftLength, int interleavedChannels)
+        {
+            long maxPerChannelSamples = rawFiles
+                .Select(path => new FileInfo(path).Length / (sizeof(short) * interleavedChannels))
+                .DefaultIfEmpty(0)
+                .Max();
+
+            int fftLength = desiredFftLength;
+            while (fftLength > 4096 && maxPerChannelSamples < fftLength)
+            {
+                fftLength /= 2;
+            }
+
+            if (maxPerChannelSamples < fftLength)
+            {
+                throw new InvalidOperationException("The raw files do not contain enough samples for a 4096-point FFT.");
+            }
+
+            return fftLength;
+        }
+
+        private double ReadConfiguredSampleRateHz()
+        {
+            try
+            {
+                if (File.Exists(RuntimeStreamIniPath))
+                {
+                    foreach (string line in File.ReadLines(RuntimeStreamIniPath))
+                    {
+                        string trimmed = line.Trim();
+                        if (!trimmed.StartsWith("SampleRate=", StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        string valueText = trimmed.Split('=', 2)[1].Trim();
+                        if (double.TryParse(valueText, NumberStyles.Float, CultureInfo.InvariantCulture, out double sampleRate)
+                            && sampleRate > 0)
+                        {
+                            return sampleRate;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Fall back below; FFT analysis can still run with the default hardware rate.
+            }
+
+            return 608e6;
+        }
+
+        private void SaveRawInterleavedFftPlot(
+            string pngPath,
+            List<RawInterleavedFftSeries> spectra,
+            RawInterleavedFftMode mode,
+            int fftLength,
+            double sampleRateHz)
+        {
+            bool lowFrequencyMode = mode == RawInterleavedFftMode.LowFrequencyNoise;
+            double minFrequencyHz = lowFrequencyMode ? 1e3 : 1e6;
+            double maxFrequencyHz = sampleRateHz / 2.0;
 
             var model = new PlotModel
             {
-                Title = "FFT Spectrum",
+                Title = $"{GetRawInterleavedFftModeLabel(mode)} - raw interleaved FFT, bin width {sampleRateHz / fftLength:F1} Hz",
                 Background = OxyColors.White
             };
 
-            var legend = new Legend
+            model.Legends.Add(new Legend
             {
                 LegendPlacement = LegendPlacement.Inside,
                 LegendPosition = LegendPosition.TopRight,
                 LegendOrientation = LegendOrientation.Vertical,
-                LegendFontSize = 12,
-            };
-
-            model.Legends.Add(legend);  // ✅ Add legend object to the model
-
-
-            model.Axes.Add(new LinearAxis
-            {
-                Position = OxyPlot.Axes.AxisPosition.Bottom,
-                Title = "Frequency (MHz)",
-                Minimum = 0,
-                Maximum = Fs / 2e6,
-                MajorGridlineStyle = LineStyle.Solid,
-                MinorGridlineStyle = LineStyle.Dot
+                LegendFontSize = 11
             });
 
-            model.Axes.Add(new LinearAxis
+            if (lowFrequencyMode)
+            {
+                model.Axes.Add(new OxyPlot.Axes.LogarithmicAxis
+                {
+                    Position = OxyPlot.Axes.AxisPosition.Bottom,
+                    Title = "Frequency (Hz)",
+                    Minimum = minFrequencyHz,
+                    Maximum = maxFrequencyHz,
+                    MajorGridlineStyle = LineStyle.Solid,
+                    MinorGridlineStyle = LineStyle.Dot
+                });
+            }
+            else
+            {
+                model.Axes.Add(new OxyPlot.Axes.LinearAxis
+                {
+                    Position = OxyPlot.Axes.AxisPosition.Bottom,
+                    Title = "Frequency (MHz)",
+                    Minimum = minFrequencyHz / 1e6,
+                    Maximum = maxFrequencyHz / 1e6,
+                    MajorGridlineStyle = LineStyle.Solid,
+                    MinorGridlineStyle = LineStyle.Dot
+                });
+            }
+
+            model.Axes.Add(new OxyPlot.Axes.LogarithmicAxis
             {
                 Position = OxyPlot.Axes.AxisPosition.Left,
-                Title = "Magnitude (dB)",
+                Title = "PSD (counts^2/Hz)",
                 MajorGridlineStyle = LineStyle.Solid,
                 MinorGridlineStyle = LineStyle.Dot
             });
 
-            model.Series.Add(new OxyPlot.Series.LineSeries
+            OxyColor[] colors =
             {
-                Title = "Channel 1",  // ✅ Will show in legend
-                Color = OxyColors.SkyBlue,
-                StrokeThickness = 1,
-                ItemsSource = freqs.Select((f, i) => new DataPoint(f, dbA[i]))
-            });
+                OxyColors.SkyBlue,
+                OxyColors.OrangeRed,
+                OxyColors.SeaGreen,
+                OxyColors.MediumPurple,
+                OxyColors.Goldenrod,
+                OxyColors.Teal
+            };
 
-            model.Series.Add(new OxyPlot.Series.LineSeries
+            for (int seriesIndex = 0; seriesIndex < spectra.Count; seriesIndex++)
             {
-                Title = "Channel 2",  // ✅ Will show in legend
-                Color = OxyColor.FromAColor(180, OxyColors.OrangeRed),  // 180/255 alpha
-                StrokeThickness = 1,
-                ItemsSource = freqs.Select((f, i) => new DataPoint(f, dbB[i]))
-            });
-
-
-
-
-            // === Export to PNG ===
-            string outputDir = Path.GetDirectoryName(experimentLogFilePath);
-            string outputPath = Path.Combine(outputDir, "fft_result.png");
-
-            using (var stream = File.Create(outputPath))
-            {
-                var exporter = new OxyPlot.SkiaSharp.PngExporter
+                RawInterleavedFftSeries spectrum = spectra[seriesIndex];
+                var lineSeries = new OxyPlot.Series.LineSeries
                 {
-                    Width = 1920,
-                    Height = 1080,
-                    Dpi = 200
+                    Title = spectrum.Name,
+                    StrokeThickness = 1.2,
+                    Color = colors[seriesIndex % colors.Length]
                 };
-                exporter.Export(model, stream);
+
+                for (int i = 1; i < spectrum.FrequencyHz.Length; i++)
+                {
+                    double frequencyHz = spectrum.FrequencyHz[i];
+                    if (frequencyHz < minFrequencyHz || frequencyHz > maxFrequencyHz)
+                    {
+                        continue;
+                    }
+
+                    double x = lowFrequencyMode ? frequencyHz : frequencyHz / 1e6;
+                    lineSeries.Points.Add(new DataPoint(x, Math.Max(spectrum.Psd[i], 1e-30)));
+                }
+
+                model.Series.Add(lineSeries);
             }
 
-            AppendMessage($"✅ FFT chart saved to {outputPath}");
-            LogExperimentEvent($"✅ FFT chart saved to {outputPath}");
+            using FileStream stream = File.Create(pngPath);
+            var exporter = new OxyPlot.SkiaSharp.PngExporter
+            {
+                Width = 1920,
+                Height = 1080,
+                Dpi = 200
+            };
+            exporter.Export(model, stream);
         }
 
-
-
-        private double[] LoadAndAverage(string path, int fftResultSize, int chunkSize = 1000)
+        private static void SaveRawInterleavedFftCsv(
+            string csvPath,
+            List<RawInterleavedFftSeries> spectra,
+            RawInterleavedFftMode mode,
+            double sampleRateHz)
         {
-            long totalPoints = new FileInfo(path).Length / 8;
-            long totalFrames = totalPoints / fftResultSize;
+            bool lowFrequencyMode = mode == RawInterleavedFftMode.LowFrequencyNoise;
+            double minFrequencyHz = lowFrequencyMode ? 1e3 : 1e6;
+            double maxFrequencyHz = lowFrequencyMode ? sampleRateHz / 2.0 : double.PositiveInfinity;
 
-            double[] avg = new double[fftResultSize];
-            double[] buffer = new double[fftResultSize * chunkSize];
-
-            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
-            using var br = new BinaryReader(fs);
-
-            int framesProcessed = 0;
-
-            while (framesProcessed < totalFrames)
+            var builder = new StringBuilder();
+            builder.Append("Frequency_Hz");
+            foreach (RawInterleavedFftSeries spectrum in spectra)
             {
-                int framesToRead = (int)Math.Min(chunkSize, totalFrames - framesProcessed);
-                int count = framesToRead * fftResultSize;
+                builder.Append(',');
+                builder.Append(SanitizeCsvHeader(spectrum.Name));
+            }
+            builder.AppendLine();
 
-                byte[] bytes = br.ReadBytes(count * sizeof(double));
-                if (bytes.Length < count * sizeof(double)) break;
+            double[] frequencies = spectra[0].FrequencyHz;
+            for (int i = 1; i < frequencies.Length; i++)
+            {
+                double frequencyHz = frequencies[i];
+                if (frequencyHz < minFrequencyHz || frequencyHz > maxFrequencyHz)
+                {
+                    continue;
+                }
 
-                Buffer.BlockCopy(bytes, 0, buffer, 0, bytes.Length);
-
-                for (int i = 0; i < framesToRead; i++)
-                    for (int j = 0; j < fftResultSize; j++)
-                        avg[j] += buffer[i * fftResultSize + j];
-
-                framesProcessed += framesToRead;
+                builder.Append(frequencyHz.ToString("G17", CultureInfo.InvariantCulture));
+                foreach (RawInterleavedFftSeries spectrum in spectra)
+                {
+                    builder.Append(',');
+                    builder.Append(Math.Max(spectrum.Psd[i], 1e-30).ToString("G17", CultureInfo.InvariantCulture));
+                }
+                builder.AppendLine();
             }
 
-            for (int j = 0; j < fftResultSize; j++)
-                avg[j] /= totalFrames;
+            File.WriteAllText(csvPath, builder.ToString());
+        }
 
-            return avg;
+        private static string SanitizeCsvHeader(string header)
+        {
+            return header.Replace(",", "_");
+        }
+
+        private static string GetRawInterleavedFftModeLabel(RawInterleavedFftMode mode)
+        {
+            return mode == RawInterleavedFftMode.LowFrequencyNoise
+                ? "Low frequency noise (log-log)"
+                : "High frequency spectrum (semilog)";
+        }
+
+        private static string GetRawInterleavedFftModeKey(RawInterleavedFftMode mode)
+        {
+            return mode == RawInterleavedFftMode.LowFrequencyNoise
+                ? "LowFrequencyNoise"
+                : "HighFrequencySpectrum";
+        }
+
+        private static JsonArray CreateFftChannelMetadata(IEnumerable<string> seriesNames)
+        {
+            JsonArray channels = new();
+            foreach (string seriesName in seriesNames)
+            {
+                int channelIndex = InferPhysicalFftChannelIndex(seriesName);
+                channels.Add(new JsonObject
+                {
+                    ["ChannelIndex"] = channelIndex,
+                    ["ChannelLabel"] = channelIndex > 0 ? $"Ch{channelIndex}" : "Ch?",
+                    ["SeriesName"] = seriesName
+                });
+            }
+
+            return channels;
+        }
+
+        private static int InferPhysicalFftChannelIndex(string seriesName)
+        {
+            Match dataMatch = Regex.Match(seriesName, @"\bData_(\d+)(?:_\d+)?\b", RegexOptions.IgnoreCase);
+            Match channelMatch = Regex.Match(seriesName, @"\bch(?:annel)?\s*(\d+)\b", RegexOptions.IgnoreCase);
+            if (!channelMatch.Success || !int.TryParse(channelMatch.Groups[1].Value, out int interleavedChannel))
+            {
+                return 0;
+            }
+
+            if (dataMatch.Success
+                && int.TryParse(dataMatch.Groups[1].Value, out int dataIndex)
+                && dataIndex is 1 or 2
+                && interleavedChannel is 1 or 2)
+            {
+                return (dataIndex - 1) * 2 + interleavedChannel;
+            }
+
+            return interleavedChannel;
+        }
+
+        private void UpdateRawInterleavedFftMetadata(RawInterleavedFftResult result)
+        {
+            try
+            {
+                string metadataPath = Path.Combine(result.RunFolder, "metadata.json");
+                JsonObject root = File.Exists(metadataPath)
+                    ? JsonNode.Parse(File.ReadAllText(metadataPath))?.AsObject() ?? new JsonObject()
+                    : new JsonObject();
+
+                JsonObject configuration = root["Configuration"] as JsonObject ?? new JsonObject();
+                root["Configuration"] = configuration;
+                configuration["FFTEnabled"] = true;
+                configuration["FFTProvider"] = "Quantum Measurement Software";
+                configuration["FFTAnalysisApplied"] = true;
+                configuration["FFTAnalysisMode"] = GetRawInterleavedFftModeLabel(result.Mode);
+                configuration["FFTRawDataLayout"] = "Int16 raw samples interleaved by channel";
+                configuration["FFTOutputPng"] = result.PngPath;
+                configuration["FFTOutputCsv"] = result.CsvPath;
+
+                string modeKey = GetRawInterleavedFftModeKey(result.Mode);
+                string modeLabel = GetRawInterleavedFftModeLabel(result.Mode);
+                JsonObject analysis = root["FFTAnalysis"] as JsonObject ?? new JsonObject();
+                JsonObject modes = analysis["Modes"] as JsonObject ?? new JsonObject();
+                JsonArray channels = CreateFftChannelMetadata(result.SeriesNames);
+                int physicalChannels = channels
+                    .Select(node => node?["ChannelIndex"]?.GetValue<int>() ?? 0)
+                    .DefaultIfEmpty(0)
+                    .Max();
+
+                modes[modeKey] = new JsonObject
+                {
+                    ["Mode"] = modeLabel,
+                    ["ModeKey"] = modeKey,
+                    ["Provider"] = "Quantum Measurement Software",
+                    ["OutputPng"] = result.PngPath,
+                    ["OutputCsv"] = result.CsvPath,
+                    ["FftLength"] = result.FftLength,
+                    ["SampleRateHz"] = result.SampleRateHz,
+                    ["MaxFramesPerFile"] = result.MaxFramesPerFile,
+                    ["SeriesCount"] = result.SeriesCount,
+                    ["Channels"] = channels,
+                    ["AppliedAt"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                };
+
+                JsonArray availableModes = new();
+                foreach (KeyValuePair<string, JsonNode?> mode in modes)
+                {
+                    availableModes.Add(mode.Key);
+                }
+
+                analysis["Enabled"] = true;
+                analysis["Applied"] = true;
+                analysis["Provider"] = "Quantum Measurement Software";
+                analysis["InputData"] = "Raw interleaved Data_*.bin files from the measurement folder";
+                analysis["Mode"] = modeLabel;
+                analysis["RawDataLayout"] = "Int16 raw samples interleaved by channel";
+                analysis["InterleavedChannels"] = result.InterleavedChannels;
+                analysis["PhysicalChannels"] = physicalChannels > 0 ? physicalChannels : null;
+                analysis["SampleRateHz"] = result.SampleRateHz;
+                analysis["FftLength"] = result.FftLength;
+                analysis["MaxFramesPerFile"] = result.MaxFramesPerFile;
+                analysis["SeriesCount"] = result.SeriesCount;
+                analysis["OutputPng"] = result.PngPath;
+                analysis["OutputCsv"] = result.CsvPath;
+                analysis["DescriptionLabel"] = root["Description"]?.GetValue<string>() ?? "";
+                analysis["Modes"] = modes;
+                analysis["AvailableModes"] = availableModes;
+                analysis["LastSyncedAt"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+                root["FFTAnalysis"] = analysis;
+
+                File.WriteAllText(metadataPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            }
+            catch (Exception ex)
+            {
+                AppendMessage("FFT metadata update failed: " + ex.Message);
+            }
         }
 
         #endregion

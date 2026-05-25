@@ -1295,6 +1295,8 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 	BOOL				bWriteSuccess = TRUE;
 	DWORD				dwFileFlag = g_StreamConfig.bFileFlagNoBuffering ? FILE_FLAG_NO_BUFFERING : 0;
 	TCHAR				szSaveFileName[MAX_PATH];
+	TCHAR				szRawDataFile1[MAX_PATH];
+	TCHAR				szRawDataFile2[MAX_PATH];
 	uInt32				u32ActualLength1 = 0;
 	uInt32				u32ActualLength2 = 0;
 	uInt8				u8EndOfData1 = 0;
@@ -1388,23 +1390,36 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 	}
 
 
-	sprintf_s(szSaveFileName, sizeof(szSaveFileName), "%s_%d.dat", g_StreamConfig.strResultFile, nCardIndex);
+	_stprintf(szSaveFileName, _T("%s_%d.dat"), g_StreamConfig.strResultFile, nCardIndex);
+	_stprintf(szRawDataFile1, _T("%s_1_%d.bin"), g_StreamConfig.strResultFile, nCardIndex);
+	_stprintf(szRawDataFile2, _T("%s_2_%d.bin"), g_StreamConfig.strResultFile, nCardIndex);
 
 	if (g_StreamConfig.bSaveToFile)
 	{
 		DWORD disp = CREATE_ALWAYS;
 		DWORD share = FILE_SHARE_READ | FILE_SHARE_WRITE; // safer with AV/indexers
-		hFile = CreateFile(_T("Data_1.dat"), GENERIC_READ | GENERIC_WRITE, share, NULL, disp, dwFileFlag, NULL);
-		hFile2 = CreateFile(_T("Data_2.dat"), GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_NEW, dwFileFlag, NULL);
+		hFile = CreateFile(szRawDataFile1, GENERIC_WRITE, share, NULL, disp, dwFileFlag, NULL);
+		hFile2 = CreateFile(szRawDataFile2, GENERIC_WRITE, share, NULL, disp, dwFileFlag, NULL);
 		if (INVALID_HANDLE_VALUE == hFile)
 		{
 			DWORD e = GetLastError();
 			TCHAR cwd[MAX_PATH];
 			GetCurrentDirectory(MAX_PATH, cwd);
-			_ftprintf(stderr, _T("\nCreateFile failed for Data_1.dat. GetLastError=%lu (cwd=%s)\n"), e, cwd);
+			_ftprintf(stderr, _T("\nCreateFile failed for %s. GetLastError=%lu (cwd=%s)\n"), szRawDataFile1, e, cwd);
 			_ftprintf(stderr, _T("\nUnable to create data file.\n"));
 			ExitThread(1);
 		}
+		if (INVALID_HANDLE_VALUE == hFile2)
+		{
+			DWORD e = GetLastError();
+			TCHAR cwd[MAX_PATH];
+			GetCurrentDirectory(MAX_PATH, cwd);
+			CloseHandle(hFile);
+			_ftprintf(stderr, _T("\nCreateFile failed for %s. GetLastError=%lu (cwd=%s)\n"), szRawDataFile2, e, cwd);
+			_ftprintf(stderr, _T("\nUnable to create data file.\n"));
+			ExitThread(1);
+		}
+		_ftprintf(stdout, _T("\nRaw stream data files:\n  %s\n  %s\n"), szRawDataFile1, szRawDataFile2);
 	}
 
 	/*
@@ -2116,12 +2131,23 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 			if (g_StreamConfig.bSaveToFile && NULL != pWorkBuffer1)
 			{
 				// While data transfer of the current buffer is in progress, save the data from pWorkBuffer to hard disk
-				dwBytesSave = 0;
-				bWriteSuccess = WriteFile(hFile, pWorkBuffer1, g_StreamConfig.u32BufferSizeBytes, &dwBytesSave, NULL);
-				bWriteSuccess = WriteFile(hFile2, pWorkBuffer2, g_StreamConfig.u32BufferSizeBytes, &dwBytesSave, NULL);
-				if (!bWriteSuccess || dwBytesSave != g_StreamConfig.u32BufferSizeBytes)
+				DWORD dwBytesSave1 = 0;
+				DWORD dwBytesSave2 = 0;
+				BOOL bWriteSuccess1 = WriteFile(hFile, pWorkBuffer1, g_StreamConfig.u32BufferSizeBytes, &dwBytesSave1, NULL);
+				DWORD writeError1 = bWriteSuccess1 ? 0 : GetLastError();
+				BOOL bWriteSuccess2 = WriteFile(hFile2, pWorkBuffer2, g_StreamConfig.u32BufferSizeBytes, &dwBytesSave2, NULL);
+				DWORD writeError2 = bWriteSuccess2 ? 0 : GetLastError();
+				if (!bWriteSuccess1 || dwBytesSave1 != g_StreamConfig.u32BufferSizeBytes)
 				{
-					_ftprintf(stdout, _T("\nWriteFile() error on card %d !!! (GetLastError() = 0x%x\n"), nCardIndex, GetLastError());
+					_ftprintf(stdout, _T("\nWriteFile() error for %s on card %d !!! (GetLastError() = 0x%x, wrote %lu/%u bytes)\n"),
+						szRawDataFile1, nCardIndex, writeError1, dwBytesSave1, g_StreamConfig.u32BufferSizeBytes);
+					SetEvent(g_hStreamError);
+					bDone = TRUE;
+				}
+				if (!bWriteSuccess2 || dwBytesSave2 != g_StreamConfig.u32BufferSizeBytes)
+				{
+					_ftprintf(stdout, _T("\nWriteFile() error for %s on card %d !!! (GetLastError() = 0x%x, wrote %lu/%u bytes)\n"),
+						szRawDataFile2, nCardIndex, writeError2, dwBytesSave2, g_StreamConfig.u32BufferSizeBytes);
 					SetEvent(g_hStreamError);
 					bDone = TRUE;
 				}
@@ -2272,11 +2298,22 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 			}
 
 			// Save the data from pWorkBuffer to hard disk
-			bWriteSuccess = WriteFile(hFile, pWorkBuffer1, u32WriteSize, &dwBytesSave, NULL);
-			bWriteSuccess = WriteFile(hFile2, pWorkBuffer2, u32WriteSize, &dwBytesSave, NULL);
-			if (!bWriteSuccess || dwBytesSave != u32WriteSize)
+			DWORD dwBytesSave1 = 0;
+			DWORD dwBytesSave2 = 0;
+			BOOL bWriteSuccess1 = WriteFile(hFile, pWorkBuffer1, u32WriteSize, &dwBytesSave1, NULL);
+			DWORD writeError1 = bWriteSuccess1 ? 0 : GetLastError();
+			BOOL bWriteSuccess2 = WriteFile(hFile2, pWorkBuffer2, u32WriteSize, &dwBytesSave2, NULL);
+			DWORD writeError2 = bWriteSuccess2 ? 0 : GetLastError();
+			if (!bWriteSuccess1 || dwBytesSave1 != u32WriteSize)
 			{
-				_ftprintf(stdout, _T("\nWriteFile() error on card %d !!! (GetLastError() = 0x%x\n"), nCardIndex, GetLastError());
+				_ftprintf(stdout, _T("\nWriteFile() error for %s on card %d !!! (GetLastError() = 0x%x, wrote %lu/%u bytes)\n"),
+					szRawDataFile1, nCardIndex, writeError1, dwBytesSave1, u32WriteSize);
+				SetEvent(g_hStreamError[i]);
+			}
+			if (!bWriteSuccess2 || dwBytesSave2 != u32WriteSize)
+			{
+				_ftprintf(stdout, _T("\nWriteFile() error for %s on card %d !!! (GetLastError() = 0x%x, wrote %lu/%u bytes)\n"),
+					szRawDataFile2, nCardIndex, writeError2, dwBytesSave2, u32WriteSize);
 				SetEvent(g_hStreamError[i]);
 			}
 		}
@@ -2288,8 +2325,10 @@ DWORD WINAPI CardStreamThread(LPVOID lpParam)
 		// Close the data file and free all streaming buffers
 		if (g_StreamConfig.bSaveToFile)
 		{
-			CloseHandle(hFile);
-			CloseHandle(hFile2);
+			if (hFile != NULL && hFile != INVALID_HANDLE_VALUE)
+				CloseHandle(hFile);
+			if (hFile2 != NULL && hFile2 != INVALID_HANDLE_VALUE)
+				CloseHandle(hFile2);
 		}
 		if (g_GpuConfig.bUseGpu)
 		{
@@ -2356,25 +2395,33 @@ BOOL Prepare_Cleanup()
 	uInt32		n = 0;
 	BOOL		bSuccess = TRUE;
 	TCHAR		szSaveFileName[MAX_PATH];
+	TCHAR		szSaveFileName2[MAX_PATH];
 	HANDLE		hFile = NULL;
 
 	if (g_StreamConfig.bSaveToFile)
 	{
 		for (n = 1; n <= g_CsSysInfo.u32BoardCount; n++)
 		{
-			sprintf_s(szSaveFileName, sizeof(szSaveFileName), "%s_%d.dat", g_StreamConfig.strResultFile, n);
-			// Check if the file exists on the HDD
-			hFile = CreateFile(szSaveFileName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
-			if (INVALID_HANDLE_VALUE != hFile)
+			_stprintf(szSaveFileName, _T("%s_1_%d.bin"), g_StreamConfig.strResultFile, n);
+			_stprintf(szSaveFileName2, _T("%s_2_%d.bin"), g_StreamConfig.strResultFile, n);
+			for (int fileIndex = 0; fileIndex < 2; fileIndex++)
 			{
-				CloseHandle(hFile);
-				bSuccess = DeleteFile(szSaveFileName);
-				if (!bSuccess)
+				TCHAR* candidate = fileIndex == 0 ? szSaveFileName : szSaveFileName2;
+				// Check if the file exists on the HDD
+				hFile = CreateFile(candidate, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+				if (INVALID_HANDLE_VALUE != hFile)
 				{
-					_ftprintf(stderr, _T("\nUnable to delete the existing data file (%s). GetLastError() = 0x%x\n"), szSaveFileName, GetLastError());
-					break;
+					CloseHandle(hFile);
+					bSuccess = DeleteFile(candidate);
+					if (!bSuccess)
+					{
+						_ftprintf(stderr, _T("\nUnable to delete the existing data file (%s). GetLastError() = 0x%x\n"), candidate, GetLastError());
+						break;
+					}
 				}
 			}
+			if (!bSuccess)
+				break;
 		}
 	}
 

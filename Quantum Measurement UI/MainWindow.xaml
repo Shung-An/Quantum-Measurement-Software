@@ -222,10 +222,6 @@
                                     <Button Name="ResendDelayStageProgramButton" Content="Resend ESP Program" Width="150" HorizontalAlignment="Center"
                                 Margin="0,0,0,10" Click="ResendDelayStageProgramButton_Click"
                                 ToolTip="Sends the selected delay-stage program command again without restarting acquisition."/>
-                                    <CheckBox x:Name="EnableFFTCheckBox" Content="Enable FFT" IsChecked="False"
-                                  Margin="8,0,0,0"
-                                  Checked="EnableFFTCheckBox_Checked"
-                                  Unchecked="EnableFFTCheckBox_Unchecked"/>
                                 </StackPanel>
                             </GroupBox>
 

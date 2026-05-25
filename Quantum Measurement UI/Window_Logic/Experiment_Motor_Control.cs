@@ -29,6 +29,8 @@ namespace Quantum_measurement_UI
 
             try
             {
+                // Create the run folder and point StreamThruGPU.ini at it before the backend starts.
+                await AsyncInitializeExperimentLog();
 
                 StartGageStreamProcess();   // Start the GageStreamThruGPU program, which is in the directory of the executable
 
@@ -50,8 +52,6 @@ namespace Quantum_measurement_UI
                 ExperimentStatusText.Text = "On";
                 ExperimentStatusIndicator.Fill = Brushes.Green;
 
-                // Initialize the experiment log
-                await AsyncInitializeExperimentLog();
                 SaveExperimentMetadata(Path.Combine(resultsBaseDirectory, experimentLogDirectory), "00:00:00");
                 LogExperimentEvent("Initial experiment metadata saved at acquisition start.");
 
@@ -153,25 +153,9 @@ namespace Quantum_measurement_UI
                 AppendMessage("Experiment terminated and GageStreamThruGPU.exe has exited.");
                 LogExperimentEvent("Experiment terminated and GageStreamThruGPU.exe has exited.");
 
-                // === Run FFT after acquisition (only if enabled) ===
-                // Use YOUR actual path; defaults to disabled unless checkbox is on.
-                string fftExePath = @"C:\Quantum Squeezing\Andy test\GageStreamThruGPU-FFT\x64\Debug\GageStreamThruGPU-FFT.exe";
-
-                if (EnableFFT) // <- checkbox gate
-                {
-                    bool ok = await RunFFTAndWaitAsync(fftExePath);
-                    if (ok)
-                    {
-                        AppendMessage("✅ FFT completed after acquisition.");
-                        LogExperimentEvent("FFT completed after acquisition.");
-                        await Dispatcher.InvokeAsync(PlotSavedFFTResults);
-                    }
-                    else
-                    {
-                        AppendMessage("⚠️ FFT failed after acquisition.");
-                        LogExperimentEvent("FFT failed after acquisition.");
-                    }
-                }
+                LogExperimentEvent(EnableFFT
+                    ? "Raw stream files were saved for Quantum Measurement Software FFT analysis."
+                    : "FFT disabled; raw stream file saving was skipped.");
 
                 // Close the experiment log
                 if (experimentLogWriter != null)
@@ -195,9 +179,15 @@ namespace Quantum_measurement_UI
                 DelayStageStatusIndicator.Fill = Brushes.Red;
 
                 isPaused = true; // Pause data updates
-                                 // Combine base path with the new folder name to get full path
+                // Combine base path with the new folder name to get full path
                 string fullResultPath = System.IO.Path.Combine(resultsBaseDirectory, experimentLogDirectory);
                 SaveExperimentMetadata(fullResultPath, ElapsedTimeText.Text);
+
+                if (EnableFFT)
+                {
+                    await PromptAndRunRawInterleavedFftAsync(fullResultPath);
+                }
+
                 /*RenameExperimentFolder();*/
 
 
@@ -510,6 +500,8 @@ namespace Quantum_measurement_UI
             double? laserWavelengthNm = ParseOptionalDouble(LaserWavelengthInput.Text);
             double detectorResponsivity = DetectorTypes.GetResponsivity(detector, laserWavelengthNm);
             double? scanVelocityMmPerS = TryReadESPScanVelocityMmPerS();
+            string rawDataFilePrefix = CurrentRawDataFilePrefix;
+            bool rawStreamSaveToFile = this.EnableFFT && !string.IsNullOrWhiteSpace(rawDataFilePrefix);
 
             // Create the metadata object with all fields
             var meta = new
@@ -526,16 +518,39 @@ namespace Quantum_measurement_UI
                 LaserWavelength_nm = laserWavelengthNm,
                 Detector = detector,
                 DetectorResponsivity_A_per_W = detectorResponsivity,
+                FFTEnabled = this.EnableFFT,
+                RawStreamSaveToFile = rawStreamSaveToFile,
+                RawDataFilePrefix = rawDataFilePrefix,
+                RawDataFilePattern = rawStreamSaveToFile ? $"{rawDataFilePrefix}_*.bin" : null,
                                       
 
                 // Machine Configuration (snapshot of current state)
                 Configuration = new
                 {
                     EnableFFT = this.EnableFFT,
+                    FFTEnabled = this.EnableFFT,
+                    FFTProvider = "Quantum Measurement Software",
+                    ExternalFftExecutableUsed = false,
+                    RawStreamSaveToFile = rawStreamSaveToFile,
+                    RawDataFilePrefix = rawDataFilePrefix,
+                    RawDataFilePattern = rawStreamSaveToFile ? $"{rawDataFilePrefix}_*.bin" : null,
+                    StreamIniPath = RuntimeStreamIniPath,
                     ExternalClock = ExtClkStatusText.Text,
                     Motor1Position = CalibrationMotor1Pos.Text, // Assuming you have this
                     Motor2Position = CalibrationMotor2Pos.Text,
                     ExternalClockStatus = ExtClkStatusText.Text
+                },
+                FFTAnalysis = new
+                {
+                    Enabled = this.EnableFFT,
+                    Applied = false,
+                    Provider = "Quantum Measurement Software",
+                    InputData = rawStreamSaveToFile ? "Raw interleaved Data_*.bin files from the measurement folder" : null,
+                    RawDataLayout = rawStreamSaveToFile ? "Int16 raw samples interleaved by channel" : null,
+                    InterleavedChannels = rawStreamSaveToFile ? 2 : (int?)null,
+                    PhysicalChannels = rawStreamSaveToFile ? 4 : (int?)null,
+                    DescriptionLabel = DescriptionInput.Text,
+                    AvailableModes = Array.Empty<string>()
                 },
                 PhysicsData = new
                 {

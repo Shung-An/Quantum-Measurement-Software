@@ -24,8 +24,12 @@ namespace Quantum_measurement_UI
         {
             try
             {
-
-                gageStreamProcess = System.Diagnostics.Process.Start(exePath);
+                var startInfo = new ProcessStartInfo(exePath)
+                {
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    UseShellExecute = false
+                };
+                gageStreamProcess = System.Diagnostics.Process.Start(startInfo);
                 AppendMessage("GageStreamThruGPU.exe started.");
             }
             catch (Exception ex)
@@ -64,6 +68,7 @@ namespace Quantum_measurement_UI
 
             // Update the global variable so other functions know where to save
             experimentLogDirectory = timestamp;
+            ConfigureStreamRawDataSave(resultDirectory);
 
             // --- (The rest of your existing logic stays the same) ---
             experimentLogFilePath = Path.Combine(resultDirectory, "exp.log");
@@ -78,6 +83,78 @@ namespace Quantum_measurement_UI
 
             experimentLogWriter.WriteLine($"Experiment Log: {experimentLogFilePath}\n");
 
+        }
+
+        private string CurrentExperimentFolderPath =>
+            string.IsNullOrWhiteSpace(experimentLogDirectory)
+                ? string.Empty
+                : Path.Combine(resultsBaseDirectory, experimentLogDirectory);
+
+        private string CurrentRawDataFilePrefix =>
+            string.IsNullOrWhiteSpace(CurrentExperimentFolderPath)
+                ? string.Empty
+                : Path.Combine(CurrentExperimentFolderPath, "Data");
+
+        private string RuntimeStreamIniPath => Path.Combine(AppContext.BaseDirectory, IniFilePath);
+
+        private void ConfigureStreamRawDataSave(string resultDirectory)
+        {
+            string rawDataPrefix = Path.Combine(resultDirectory, "Data");
+            EnsureIniValue(RuntimeStreamIniPath, "Acquisition", "SampleRate", "608000000");
+            EnsureIniValue(RuntimeStreamIniPath, "StmConfig", "SaveToFile", EnableFFT ? "1" : "0");
+            EnsureIniValue(RuntimeStreamIniPath, "StmConfig", "DataFile", rawDataPrefix);
+            AppendMessage(EnableFFT
+                ? $"FFT raw stream data save enabled: {rawDataPrefix}_*.bin"
+                : "FFT disabled: raw stream data save is off (SaveToFile=0).");
+        }
+
+        private static void EnsureIniValue(string iniPath, string sectionName, string key, string value)
+        {
+            var lines = File.Exists(iniPath)
+                ? File.ReadAllLines(iniPath).ToList()
+                : new List<string>();
+
+            string sectionHeader = $"[{sectionName}]";
+            int sectionStart = lines.FindIndex(line => string.Equals(line.Trim(), sectionHeader, StringComparison.OrdinalIgnoreCase));
+            if (sectionStart < 0)
+            {
+                if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1]))
+                {
+                    lines.Add(string.Empty);
+                }
+                lines.Add(sectionHeader);
+                lines.Add($"{key}={value}");
+                File.WriteAllLines(iniPath, lines);
+                return;
+            }
+
+            int insertIndex = lines.Count;
+            for (int index = sectionStart + 1; index < lines.Count; index++)
+            {
+                string trimmed = lines[index].Trim();
+                if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
+                {
+                    insertIndex = index;
+                    break;
+                }
+
+                int equalsIndex = lines[index].IndexOf('=');
+                if (equalsIndex < 0)
+                {
+                    continue;
+                }
+
+                string existingKey = lines[index][..equalsIndex].Trim();
+                if (string.Equals(existingKey, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    lines[index] = $"{key}={value}";
+                    File.WriteAllLines(iniPath, lines);
+                    return;
+                }
+            }
+
+            lines.Insert(insertIndex, $"{key}={value}");
+            File.WriteAllLines(iniPath, lines);
         }
 
 

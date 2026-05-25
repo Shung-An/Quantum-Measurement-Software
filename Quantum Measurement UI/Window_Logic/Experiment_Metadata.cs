@@ -68,6 +68,7 @@ namespace Quantum_measurement_UI
                 Temperature_K = ParseOptionalDouble(TemperatureInput.Text),
                 OnSamplePower_mW = ParseOptionalDouble(OnSamplePowerInput.Text),
                 PowerDetectorAttenuatorApplied = PowerDetectorAttenuatorAppliedCheckBox.IsChecked == true,
+                EnableFFT = EnableFFT,
                 Samples = GetSelectedSamples(),
                 Tags = GetSelectedTags(),
                 UsedOpo = UsedOpoCheckBox.IsChecked == true,
@@ -83,6 +84,8 @@ namespace Quantum_measurement_UI
             TemperatureInput.Text = FormatOptionalDouble(metadata.Temperature_K);
             OnSamplePowerInput.Text = FormatOptionalDouble(metadata.OnSamplePower_mW);
             PowerDetectorAttenuatorAppliedCheckBox.IsChecked = metadata.PowerDetectorAttenuatorApplied;
+            EnableFFT = metadata.EnableFFT;
+            EnsureIniValue(RuntimeStreamIniPath, "StmConfig", "SaveToFile", EnableFFT ? "1" : "0");
             UsedOpoCheckBox.IsChecked = metadata.UsedOpo;
             LaserWavelengthInput.Text = FormatOptionalDouble(metadata.LaserWavelength_nm);
             SetComboBoxSelection(DetectorSelection, DetectorTypes.NormalizeDetector(metadata.Detector));

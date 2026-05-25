@@ -26,6 +26,7 @@ namespace Quantum_measurement_UI
             DetectorComboBox.SelectedItem = DetectorTypes.NormalizeDetector(metadata.Detector);
             UsedOpoCheckBox.IsChecked = metadata.UsedOpo;
             AttenuatorCheckBox.IsChecked = metadata.PowerDetectorAttenuatorApplied;
+            EnableFftCheckBox.IsChecked = metadata.EnableFFT;
 
             PopulateChecks(SampleList, sampleOptions, metadata.Samples);
             PopulateChecks(TagList, tagOptions, metadata.Tags);
@@ -110,6 +111,7 @@ namespace Quantum_measurement_UI
                 Temperature_K = temperatureK,
                 OnSamplePower_mW = onSamplePowerMw,
                 PowerDetectorAttenuatorApplied = AttenuatorCheckBox.IsChecked == true,
+                EnableFFT = EnableFftCheckBox.IsChecked == true,
                 Samples = samples,
                 Tags = ReadCheckedItems(TagList),
                 UsedOpo = UsedOpoCheckBox.IsChecked == true,
