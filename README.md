@@ -8,7 +8,7 @@ Windows software for acquiring quantum measurement signals, displaying live corr
 
 | Folder | Purpose | Start here |
 | --- | --- | --- |
-| [Quantum Measurement UI](Quantum%20Measurement%20UI/) | WPF frontend, live plots, experiment control, metadata, and history | [UI guide](Quantum%20Measurement%20UI/README.md) · [Window logic](Quantum%20Measurement%20UI/Window_Logic/Info.md) |
+| [Quantum Measurement UI](Quantum%20Measurement%20UI/) | WPF frontend, live plots, experiment control, metadata, and history | [UI guide](Quantum%20Measurement%20UI/README.md) · [Window logic](Quantum%20Measurement%20UI/Window_Logic/README.md) |
 | [GageStreamThruGPU](GageStreamThruGPU/) | Main two-board acquisition and CUDA correlation backend | [Setup and usage](GageStreamThruGPU/README.md) · [Calibration equations](GageStreamThruGPU/README.md#implementation-reference-calibration-equations) |
 | [GageStreamThruGPUAlignment](GageStreamThruGPUAlignment/) | Separate alignment backend project | [Acquisition source](GageStreamThruGPUAlignment/StreamThruGPU_Simple.c) · [Build project](GageStreamThruGPUAlignment/GageStreamThruGPU-Alignment.vcxproj) |
 | [QuantumDAQService](QuantumDAQService/) | NI-DAQ analog-input monitoring over a separate named pipe | [Service guide](QuantumDAQService/README.md) · [Source](QuantumDAQService/QuantumDAQService.cs) |
