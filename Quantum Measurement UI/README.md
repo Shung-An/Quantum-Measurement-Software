@@ -8,6 +8,8 @@ This project is the WPF frontend for QuantaMeasure. It is responsible for:
 - launching post-run FFT and analysis steps
 - browsing saved experiment results
 
+See the [Window_Logic guide](Window_Logic/README.md) for a file map, experiment lifecycle, pipe contracts, and implementation notes.
+
 ## Main Files
 
 - `MainWindow.xaml`: top-level UI layout
