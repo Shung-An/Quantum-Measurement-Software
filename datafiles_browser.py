@@ -9,7 +9,7 @@ POST_PROCESSING_BROWSER = (
     Path(__file__).resolve().parents[1]
     / "prototype and postprocessing"
     / "post processing"
-    / "datafiles_browser.py"
+    / "datafiles_browser.py" 
 )
 
 spec = importlib.util.spec_from_file_location("post_processing_datafiles_browser", POST_PROCESSING_BROWSER)

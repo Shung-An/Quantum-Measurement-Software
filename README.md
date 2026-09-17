@@ -18,6 +18,7 @@ See QuantaMeasure in action! Watch the live demonstration  to explore the key fe
   - [**Live Demo**](#live-demo)
 - [Table of Contents](#table-of-contents)
 - [Documentation Roadmap](#documentation-roadmap)
+- [Subfolder Documentation](#subfolder-documentation)
 - [Overview](#overview)
     - [Figure 1 Explanation](#figure-1-explanation)
     - [1. Quantum Measurement UI](#1-quantum-measurement-ui)
@@ -64,6 +65,23 @@ See QuantaMeasure in action! Watch the live demonstration  to explore the key fe
 4. [CUDA Programming for Data Processing](#cuda-programming-for-data-processing): Provides a basic introduction to CUDA programming along with a detailed explanation of the CUDA code utilized.
 5. [Project and Process Connections](#project-and-process-connections): Provides a technical overview of how components are seamlessly connected, along with guidance on integrating additional components in the future.
 
+
+# Subfolder Documentation
+
+Project instructions and supporting reference documents:
+
+- [Quantum Measurement UI](./Quantum%20Measurement%20UI/README.md): WPF frontend components and workflows.
+- [Window Logic](./Quantum%20Measurement%20UI/Window_Logic/Info.md): Responsibilities of the main window's logic files.
+- [GageStreamThruGPU](./GageStreamThruGPU/README.md): Data acquisition and GPU processing documentation.
+- [GageStreamThruGPU Alignment](./GageStreamThruGPUAlignment/README.md): Alignment project README.
+- [Hardware Smoke Test](./GageStreamThruGPU.HardwareSmoke/README.md): Instructions for testing acquisition with real hardware.
+- [Named-Pipe Protocol Tests](./GageStreamThruGPU.Tests/README.md): Protocol test coverage and instructions.
+- [GPU Workflow Demo](./GageStreamThruGPU.WorkflowDemo/README.md): Running the CUDA workflow with synthetic input.
+- [Standalone TCP/IP Device Controller](./StandaloneTcpIpDeviceController/README.md): GUI and command instructions for controlling the Levante IR OPO software.
+- [Correlation Matrix Computation](./GageStreamThruGPU/Correlation_Matrix_Computation_Math.pdf): Mathematical reference for correlation processing.
+- [Alignment Correlation Matrix Computation](./GageStreamThruGPUAlignment/Correlation_Matrix_Computation_Math.pdf): Mathematical reference included with the alignment project.
+- [FIR Notch Discussion](./GageStreamThruGPU/fir_notch_discussion.md): Demodulation subtraction and residual correlation notes.
+- [Dark Noise Correlation Test Summary](./GageStreamThruGPU/dark_noise_correlation_fan_hypothesis_report.md): Test observations and hypotheses about correlated noise.
 
 # Overview
 
